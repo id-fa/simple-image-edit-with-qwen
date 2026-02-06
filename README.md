@@ -4,13 +4,14 @@
 
 **Qwen-Image-Edit-2509 Lightning (Nunchaku版)**: `simple_image_edit_nunchaku_qwen.py`
 
-**「画像ファイル1枚を引数に取って、編集した画像を出力」**する用途を想定しています。
+**「画像ファイル1枚を引数に取って、編集した画像を出力」** する用途を想定しています。
 
 > **対象環境:** GeForce RTX 3xxx (VRAM 12GB) 程度の環境で動作させることを目指してモデルを選定・調整しています。より高性能なGPUでは `--no-offload` や高解像度での処理も可能です。
 
-> **備考:** Z-Image Turbo (4bit)もテストしましたが要求を満たす性能を発揮させることができませんでした。一応検証したスクリプト(`simple_image_edit_zit.py`)を残してあります。
+> **備考1:** Z-Image Turbo (4bit)もテストしましたが要求を満たす性能を発揮させることができませんでした。一応検証したスクリプト(`simple_image_edit_zit.py`)を残してあります。
 
-> **備考:** FLUX.2 [klein] 4B は利用できましたが、diffusers最新版を要求するためnunchaku版Qwen-Image-Editとは共存できません。venvを分ける必要があります。(`simple_image_edit_flux2_klein.py`)
+> **備考2:** FLUX.2 [klein] 4B は利用できましたが、diffusers最新版を要求するためnunchaku版Qwen-Image-Editとは共存できません。venvを分ける必要があります。(`simple_image_edit_flux2_klein.py`)
+
 > `pip install -U git+https://github.com/huggingface/diffusers`
 
 ---
@@ -84,12 +85,13 @@ pip install -U pillow huggingface_hub psutil transformers accelerate safetensors
 pip install "diffusers>=0.36.0,<0.37.0"
 ```
 
-nunchaku はコンパイル済のwheel版をpipで導入するのが簡単です。
+nunchaku はリリースアセットの中からバージョンに合ったコンパイル済のwheelを見つけてpipで導入するのが簡単です。
+
+> ※ Windows、Python 3.11、Torch2.10+cu130の場合
 
 ```powershell
 py -m pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
 ```
-> Python 3.11、Torch2.10+cu130の場合
 
 **重要:** Nunchaku 1.2.1 は `diffusers==0.36.x` が必要です。git main版（0.37.0.dev）はAPIが変更されており、`pos_embed`関連のエラーが発生します。
 
@@ -255,7 +257,4 @@ Default cache locations:
 
 ---
 
-## License
-
-License for scripts in this repository: Add as appropriate (e.g., MIT).
-Models and dependencies follow their respective distribution licenses.
+2026.02 id-fa
