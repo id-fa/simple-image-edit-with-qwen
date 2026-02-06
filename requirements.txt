@@ -1,0 +1,26 @@
+# requirements.txt
+
+# PyTorch (CUDA版/CPU版は環境に合わせて別途インストール推奨)
+torch>=2.4.0
+torchvideo
+torchaudio
+
+# diffusers: Nunchaku 1.2.1 は 0.36.x が必要（0.37.0.dev は API 変更あり）
+diffusers>=0.36.0,<0.37.0
+
+# Core HF stack
+hf_xet
+transformers>=4.45.0
+accelerate>=0.33.0
+huggingface_hub>=0.24.0
+safetensors>=0.4.5
+
+# Image IO
+pillow>=10.4.0
+
+# 4bit quantization (optional: --no-4bit なら不要だが入れておくと便利)
+bitsandbytes>=0.43.0
+
+# Tokenizer / text deps (環境によって必要)
+sentencepiece>=0.2.0
+protobuf>=4.25.0
