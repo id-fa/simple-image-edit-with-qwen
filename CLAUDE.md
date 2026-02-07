@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Python scripts for AI-powered image editing using diffusion models:
 
 1. **simple_image_edit_nunchaku_qwen.py** - Qwen-Image-Edit-2509 Lightning (Nunchaku-optimized) pipeline **(main)**
-2. **simple_image_edit_flux2_klein.py** - FLUX.2 Klein 4B pipeline (requires separate venv with latest diffusers)
-3. **simple_image_edit_zit.py** - Z-Image Turbo (4bit) img2img pipeline (archived; did not meet quality requirements)
+2. **simple_image_edit_rapid_qwen.py** - Qwen-Image-Edit-Rapid-AIO-V23 (4-step accelerated, no nunchaku)
+3. **simple_image_edit_flux2_klein.py** - FLUX.2 Klein 4B pipeline (requires separate venv with latest diffusers)
+4. **simple_image_edit_zit.py** - Z-Image Turbo (4bit) img2img pipeline (archived; did not meet quality requirements)
 
 All take a single image as input and output an edited version. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
@@ -23,6 +24,13 @@ All take a single image as input and output an edited version. Prompts can be sp
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png --pre-resize 2m --progress
+```
+
+### Qwen-Image-Edit-Rapid-AIO-V23 — requires recent diffusers
+```powershell
+py .\simple_image_edit_rapid_qwen.py .\sample.png
+py .\simple_image_edit_rapid_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
+py .\simple_image_edit_rapid_qwen.py .\sample.png --pre-resize 2m --offload --progress
 ```
 
 ### FLUX.2 Klein 4B — requires diffusers latest (git main)
@@ -41,11 +49,13 @@ py .\simple_image_edit_flux2_klein.py .\sample.png --pre-resize 1m --offload --p
 - `--no-offload` - Disable offloading (requires high VRAM)
 
 ### Script-specific Options
-- `--offload` (FLUX.2 Klein) - Sequential CPU offload for low VRAM
-- `--steps N` (both) - Override inference step count
-- `--rank N` (Qwen only) - Nunchaku rank (32 or 128)
-- `--num-blocks-on-gpu N` (Qwen only) - Blocks to keep on GPU in low-VRAM mode
-- `--guidance-scale N` (FLUX.2 Klein only) - Override guidance scale
+- `--offload` (FLUX.2 Klein, Rapid Qwen) - Sequential CPU offload for low VRAM
+- `--steps N` (all) - Override inference step count
+- `--rank N` (Nunchaku Qwen only) - Nunchaku rank (32 or 128)
+- `--num-blocks-on-gpu N` (Nunchaku Qwen only) - Blocks to keep on GPU in low-VRAM mode
+- `--guidance-scale N` (FLUX.2 Klein, Rapid Qwen) - Override guidance scale
+- `--true-cfg-scale N` (Rapid Qwen) - Override true CFG scale
+- `--negative-prompt "..."` (Rapid Qwen) - Override negative prompt
 
 ## Environment Setup
 
@@ -62,7 +72,7 @@ py -m pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2
 
 **Critical:** Nunchaku 1.2.1 requires `diffusers==0.36.x`. Version 0.37+ has breaking API changes causing `pos_embed` errors.
 
-### venv for FLUX.2 Klein (separate)
+### venv for Rapid Qwen / FLUX.2 Klein (shared, requires recent diffusers)
 ```powershell
 py -3.11 -m venv .venv-flux2
 .\.venv-flux2\Scripts\activate
@@ -90,6 +100,14 @@ All scripts share this preprocessing flow:
   - Low VRAM: `transformer.set_offload()` + `enable_sequential_cpu_offload()`
 - Warns if incompatible diffusers version detected
 
+**Qwen Rapid-AIO-V23**:
+- 4-step accelerated transformer (from `prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23`)
+- Base pipeline: `Qwen/Qwen-Image-Edit-2511`
+- Prefers bf16, falls back to fp16
+- No nunchaku dependency; uses standard `QwenImageTransformer2DModel`
+- 3-tier offload: default `enable_model_cpu_offload()`, `--offload` for sequential, `--no-offload` for full GPU
+- Supports negative prompt and true CFG scale
+
 **FLUX.2 Klein 4B**:
 - 4B parameter rectified flow transformer (distilled)
 - Prefers bf16, falls back to fp16
@@ -111,6 +129,12 @@ Edit constants at top of each script for fixed values:
 - `NUM_INFERENCE_STEPS` (8), `RANK` (32)
 - `NUM_BLOCKS_ON_GPU` (1), `GPU_MEM_THRESHOLD_GB` (18.0)
 
+**simple_image_edit_rapid_qwen.py**:
+- `PROMPT`, `TRUE_CFG_SCALE` (1.0), `GUIDANCE_SCALE` (1.0), `NEGATIVE_PROMPT` (" ")
+- `NUM_INFERENCE_STEPS` (4)
+- `TRANSFORMER_ID` (`prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23`)
+- `BASE_MODEL_ID` (`Qwen/Qwen-Image-Edit-2511`)
+
 **simple_image_edit_flux2_klein.py**:
 - `PROMPT`, `GUIDANCE_SCALE` (1.0)
 - `NUM_INFERENCE_STEPS` (20)
@@ -127,6 +151,8 @@ Edit constants at top of each script for fixed values:
 nunchaku-tech/nunchaku-qwen-image-edit-2509/lightning-251115/
 svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safetensors
 ```
+
+**Qwen Rapid**: Transformer from `prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23`, base `Qwen/Qwen-Image-Edit-2511`
 
 **FLUX.2 Klein**: `black-forest-labs/FLUX.2-klein-4B`
 
@@ -154,6 +180,7 @@ hf cache rm <revision_id>
 
 ## Output Naming
 
-- Qwen: `{input_stem}_filtered.png`
+- Qwen (Nunchaku): `{input_stem}_filtered.png`
+- Qwen (Rapid): `{input_stem}_filtered_rapid.png`
 - FLUX.2 Klein: `{input_stem}_filtered_klein.png`
 - Z-Image: `{input_stem}_filtered_zit.png`
