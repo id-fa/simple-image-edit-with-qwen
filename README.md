@@ -107,13 +107,13 @@ PyTorch は**CUDA対応版**を明示的にインストールする必要があ�
 > ※ CUDA 13.0 の場合（RTX 30xx〜50xx）
 
 ```powershell
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+pip install -U torch torchvision --index-url https://download.pytorch.org/whl/cu130
 ```
 
 > ※ CUDA 12.8 の場合
 
 ```powershell
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install -U torch torchvision --index-url https://download.pytorch.org/whl/cu128
 ```
 
 利用可能なCUDAバージョンは [PyTorch公式](https://pytorch.org/get-started/locally/) で確認してください。インストール後、以下で確認できます:
@@ -139,7 +139,7 @@ nunchaku はリリースアセットの中からバージョンに合ったコ�
 > ※ Windows、Python 3.11、Torch 2.10 + CUDA 13.0 の場合
 
 ```powershell
-pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
+pip install -U https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
 ```
 
 その他の環境は [nunchaku リリースページ](https://github.com/nunchaku-ai/nunchaku/releases) で対応する wheel を探してください。
@@ -329,13 +329,13 @@ You must explicitly install the **CUDA build** of PyTorch. Without `--index-url`
 > CUDA 13.0 (RTX 30xx–50xx):
 
 ```powershell
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+pip install -U torch torchvision --index-url https://download.pytorch.org/whl/cu130
 ```
 
 > CUDA 12.8:
 
 ```powershell
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install -U torch torchvision --index-url https://download.pytorch.org/whl/cu128
 ```
 
 Check available CUDA versions at [pytorch.org](https://pytorch.org/get-started/locally/). Verify after install:
@@ -349,7 +349,7 @@ python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
 Nunchaku and GGUF versions require `diffusers==0.36.x`.
 
 ```powershell
-pip install "diffusers>=0.36.0,<0.37.0"
+pip install -U "diffusers>=0.36.0,<0.37.0"
 ```
 
 **Important:** The git main version (0.37.0.dev) has API changes that cause `pos_embed` / `max_txt_seq_len` / `txt_seq_lens` related errors.
@@ -361,7 +361,7 @@ Install the pre-compiled wheel matching your environment from the release assets
 > Example: Windows, Python 3.11, Torch 2.10 + CUDA 13.0
 
 ```powershell
-pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
+pip install -U https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
 ```
 
 For other environments, find the matching wheel on the [nunchaku releases page](https://github.com/nunchaku-ai/nunchaku/releases).
