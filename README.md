@@ -116,7 +116,7 @@ nunchaku はリリースアセットの中からバージョンに合ったコ�
 py -m pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
 ```
 
-**重要:** Nunchaku 1.2.1 は `diffusers==0.36.x` が必要です。git main版（0.37.0.dev）はAPIが変更されており、`pos_embed`関連のエラーが発生します。
+**重要:** Nunchaku 1.2.1 は `diffusers==0.36.x` が必要です。git main版（0.37.0.dev）はAPIが変更されており、`pos_embed` `max_txt_seq_len` `txt_seq_lens` 関連のエラーが発生します。
 
 **注意:** 初回起動時にモデルのダウンロードが発生します（**30〜100GB程度**）。ダウンロード先は Hugging Face のキャッシュディレクトリです。
 
