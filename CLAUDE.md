@@ -61,6 +61,9 @@ py .\simple_image_edit_flux2_klein.py .\sample.png --ref ref2.png --ref ref3.png
 - `--progress` - Show Hugging Face download progress
 - `--mem-log` - Display memory usage (requires psutil)
 - `--no-offload` - Disable offloading (requires high VRAM)
+- `--lora REPO_OR_PATH` - LoRA weights (HF repo ID or local path; Nunchaku: nunchaku API, others: diffusers API, Z-Image: ignored)
+- `--lora-weight-name FILE` - Weight file name within HF repo (optional; auto-detected if omitted)
+- `--lora-scale N` - LoRA strength (default: 1.0; Nunchaku: `set_lora_strength()`, others: `fuse_lora()` when != 1.0)
 
 ### Script-specific Options
 - `--offload` (FLUX.2 Klein, Rapid Qwen, GGUF Qwen) - Sequential CPU offload for low VRAM
@@ -215,6 +218,9 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | GGUF `from_single_file` fails | Ensure `qwen-image-edit-transformer-config/config.json` exists; check diffusers version |
 | Qwen (nunchaku/GGUF) + FLUX.2 conflict | Use separate venvs (diffusers version incompatible). Nunchaku and GGUF can share the same 0.36.x venv |
 | CUDA OOM with `--ref` | Reference images increase VRAM usage; use `--pre-resize 1m`, reduce `--ref` count, or enable offload |
+| LoRA load failure | Verify the LoRA is compatible with the target model architecture (Qwen/FLUX.2); check file path or HF repo ID |
+| CUDA OOM with `--lora` | LoRA increases VRAM usage; combine with `--pre-resize 1m` and offload options |
+| Nunchaku LoRA format | Nunchaku uses its own LoRA format via `transformer.update_lora_params()`; standard diffusers LoRA files may not work |
 
 ## Cache Management
 

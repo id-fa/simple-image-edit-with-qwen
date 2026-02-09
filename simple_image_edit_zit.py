@@ -210,10 +210,18 @@ def main():
     ap.add_argument("--seed", type=int, default=None, help="乱数シード（省略時はランダム）")
     ap.add_argument("--ref", action="append", default=[], metavar="FILE",
                     help="参照画像（ZImageでは未対応、無視されます）")
+    ap.add_argument("--lora", default=None, metavar="REPO_OR_PATH",
+                    help="LoRA重み（ZImageでは未対応、無視されます）")
+    ap.add_argument("--lora-weight-name", default=None, metavar="FILE",
+                    help="LoRA重みファイル名（ZImageでは未対応、無視されます）")
+    ap.add_argument("--lora-scale", type=float, default=1.0,
+                    help="LoRA適用強度（ZImageでは未対応、無視されます）")
     args = ap.parse_args()
 
     if args.ref:
         eprint("[warn] --ref は ZImageImg2ImgPipeline では未対応のため無視されます。")
+    if args.lora:
+        eprint("[warn] --lora は ZImageImg2ImgPipeline では未対応のため無視されます。")
 
     # bitsandbytes is only needed for unsloth-4bit model
     require_imports(need_bitsandbytes=not args.official)

@@ -237,6 +237,12 @@ def main():
     ap.add_argument("--seed", type=int, default=None, help="乱数シード（省略時はランダム）")
     ap.add_argument("--ref", action="append", default=[], metavar="FILE",
                     help="参照画像を追加（最大2回指定可能、合計3画像まで）")
+    ap.add_argument("--lora", default=None, metavar="REPO_OR_PATH",
+                    help="LoRA重みのHFリポジトリIDまたはローカルパス")
+    ap.add_argument("--lora-weight-name", default=None, metavar="FILE",
+                    help="HFリポジトリ内のLoRA重みファイル名")
+    ap.add_argument("--lora-scale", type=float, default=1.0,
+                    help="LoRA適用強度 (default: 1.0)")
     ap.add_argument("--gguf-repo", default=GGUF_REPO,
                     help=f"GGUFモデルのHFリポジトリ (default: {GGUF_REPO})")
     ap.add_argument("--gguf-file", default=GGUF_FILENAME,
@@ -348,6 +354,21 @@ def main():
         )
     eprint(f"[info] pipeline loaded ({time.time()-t1:.1f}s)")
     mem("after load", torch)
+
+    # LoRA loading (diffusers API)
+    if args.lora:
+        eprint(f"[info] loading LoRA: {args.lora}")
+        try:
+            lora_kwargs = {}
+            if args.lora_weight_name:
+                lora_kwargs["weight_name"] = args.lora_weight_name
+            pipeline.load_lora_weights(args.lora, **lora_kwargs)
+            if args.lora_scale != 1.0:
+                pipeline.fuse_lora(lora_scale=args.lora_scale)
+                eprint(f"[info] LoRA fused (scale={args.lora_scale})")
+            eprint("[info] LoRA loaded")
+        except Exception as ex:
+            die(f"エラー: LoRAの読み込みに失敗しました。\n  詳細: {ex}")
 
     # Offload strategy
     if args.no_offload:

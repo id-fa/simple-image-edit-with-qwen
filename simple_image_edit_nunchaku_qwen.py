@@ -253,6 +253,12 @@ def main():
     ap.add_argument("--seed", type=int, default=None, help="乱数シード（省略時はランダム）")
     ap.add_argument("--ref", action="append", default=[], metavar="FILE",
                     help="参照画像を追加（最大2回指定可能、合計3画像まで）")
+    ap.add_argument("--lora", default=None, metavar="REPO_OR_PATH",
+                    help="LoRA重みのHFリポジトリIDまたはローカルパス")
+    ap.add_argument("--lora-weight-name", default=None, metavar="FILE",
+                    help="HFリポジトリ内のLoRA重みファイル名")
+    ap.add_argument("--lora-scale", type=float, default=1.0,
+                    help="LoRA適用強度 (default: 1.0)")
     args = ap.parse_args()
 
     if len(args.ref) > 2:
@@ -308,6 +314,20 @@ def main():
             f"ヒント: --steps (4 or 8) と --rank (32 or 128) の組み合わせを確認してください。"
         )
     eprint(f"[info] transformer loaded ({time.time()-t0:.1f}s)")
+
+    # LoRA loading (nunchaku API)
+    if args.lora:
+        eprint(f"[info] loading LoRA: {args.lora}")
+        lora_path = args.lora
+        if args.lora_weight_name:
+            from huggingface_hub import hf_hub_download
+            lora_path = hf_hub_download(repo_id=args.lora, filename=args.lora_weight_name)
+        try:
+            transformer.update_lora_params(lora_path)
+            transformer.set_lora_strength(args.lora_scale)
+            eprint(f"[info] LoRA loaded (scale={args.lora_scale})")
+        except Exception as ex:
+            die(f"エラー: LoRAの読み込みに失敗しました。\n  詳細: {ex}")
 
     # Load pipeline (same as official sample)
     scheduler = FlowMatchEulerDiscreteScheduler.from_config(build_scheduler_config())
