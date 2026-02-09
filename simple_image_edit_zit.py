@@ -25,7 +25,7 @@ from pathlib import Path
 # =======================
 # Fixed parameters (EDIT HERE)
 # =======================
-PROMPT = "Correct the unnatural line breaks at the page boundaries. Remove text-like elements. Remove MPEG noise and low-resolution noise. Maintain identical camera angle, framing, and perspective. Maintain character's posture and body orientation. Make sure to leave character's facial features identical and costume."
+PROMPT = "Fix visible seams and misalignment at image boundaries. Remove all overlaid text, subtitles, and credits. Remove compression artifacts and upscaling noise. Preserve the original composition, character identity, pose, and costume exactly."
 NEGATIVE_PROMPT = ""
 
 NUM_STEPS = 9

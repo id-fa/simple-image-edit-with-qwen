@@ -13,6 +13,5 @@
   "num_attention_heads": 24,
   "num_layers": 60,
   "out_channels": 16,
-  "patch_size": 2,
-  "zero_cond_t": true
+  "patch_size": 2
 }
