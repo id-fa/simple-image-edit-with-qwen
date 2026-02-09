@@ -111,6 +111,8 @@ def parse_pre_resize(s: str | None) -> int | None:
     t = s.strip().lower()
     if t in ("none", "off", "0", ""):
         return None
+    if t in ("0.3m", "0.3mp"):
+        return 300_000
     if t in ("1m", "1mp"):
         return 1_000_000
     if t in ("2m", "2mp"):
@@ -119,7 +121,7 @@ def parse_pre_resize(s: str | None) -> int | None:
         v = int(t)
         return v if v > 0 else None
     except Exception:
-        raise argparse.ArgumentTypeError("pre-resize は '1m'/'2m'/正の整数/none を指定してください")
+        raise argparse.ArgumentTypeError("pre-resize は '0.3m'/'1m'/'2m'/正の整数/none を指定してください")
 
 
 def open_image(path: Path):

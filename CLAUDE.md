@@ -8,14 +8,15 @@ Python scripts for AI-powered image editing using diffusion models:
 
 1. **simple_image_edit_nunchaku_qwen.py** - Qwen-Image-Edit-2509 Lightning (Nunchaku-optimized) pipeline **(main)**
 2. **simple_image_edit_rapid_qwen.py** - Qwen-Image-Edit-Rapid-AIO-V23 (4-step accelerated, no nunchaku)
-3. **simple_image_edit_flux2_klein.py** - FLUX.2 Klein 4B pipeline (requires separate venv with latest diffusers)
-4. **simple_image_edit_zit.py** - Z-Image Turbo (4bit) img2img pipeline (archived; did not meet quality requirements)
+3. **simple_image_edit_gguf_qwen.py** - Qwen-Image-Edit-Rapid-AIO-V23 GGUF quantized (Q3_K default, low VRAM)
+4. **simple_image_edit_flux2_klein.py** - FLUX.2 Klein 4B pipeline (requires separate venv with latest diffusers)
+5. **simple_image_edit_zit.py** - Z-Image Turbo (4bit) img2img pipeline (archived; did not meet quality requirements)
 
 All take a single image as input and output an edited version. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
 **Target Environment:** GeForce RTX 3xxx (VRAM 12GB) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
-**Important:** Qwen (nunchaku) and FLUX.2 Klein cannot coexist in the same venv due to diffusers version conflicts.
+**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`).
 
 ## Running the Scripts
 
@@ -31,6 +32,14 @@ py .\simple_image_edit_nunchaku_qwen.py .\sample.png --pre-resize 2m --progress
 py .\simple_image_edit_rapid_qwen.py .\sample.png
 py .\simple_image_edit_rapid_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
 py .\simple_image_edit_rapid_qwen.py .\sample.png --pre-resize 2m --offload --progress
+```
+
+### Qwen-Image-Edit-Rapid GGUF — requires diffusers 0.36.x + gguf
+```powershell
+py .\simple_image_edit_gguf_qwen.py .\sample.png
+py .\simple_image_edit_gguf_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
+py .\simple_image_edit_gguf_qwen.py .\sample.png --pre-resize 2m --offload --progress
+py .\simple_image_edit_gguf_qwen.py .\sample.png --gguf-file v23/Qwen-Rapid-NSFW-v23_Q2_K.gguf
 ```
 
 ### FLUX.2 Klein 4B — requires diffusers latest (git main)
@@ -49,13 +58,16 @@ py .\simple_image_edit_flux2_klein.py .\sample.png --pre-resize 1m --offload --p
 - `--no-offload` - Disable offloading (requires high VRAM)
 
 ### Script-specific Options
-- `--offload` (FLUX.2 Klein, Rapid Qwen) - Sequential CPU offload for low VRAM
+- `--offload` (FLUX.2 Klein, Rapid Qwen, GGUF Qwen) - Sequential CPU offload for low VRAM
 - `--steps N` (all) - Override inference step count
 - `--rank N` (Nunchaku Qwen only) - Nunchaku rank (32 or 128)
 - `--num-blocks-on-gpu N` (Nunchaku Qwen only) - Blocks to keep on GPU in low-VRAM mode
-- `--guidance-scale N` (FLUX.2 Klein, Rapid Qwen) - Override guidance scale
-- `--true-cfg-scale N` (Rapid Qwen) - Override true CFG scale
-- `--negative-prompt "..."` (Rapid Qwen) - Override negative prompt
+- `--guidance-scale N` (FLUX.2 Klein, Rapid Qwen, GGUF Qwen) - Override guidance scale
+- `--true-cfg-scale N` (Rapid Qwen, GGUF Qwen) - Override true CFG scale
+- `--negative-prompt "..."` (Rapid Qwen, GGUF Qwen) - Override negative prompt
+- `--gguf-repo REPO` (GGUF Qwen) - HuggingFace GGUF repo (default: `Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF`)
+- `--gguf-file PATH` (GGUF Qwen) - GGUF file within repo (default: `v23/Qwen-Rapid-NSFW-v23_Q3_K.gguf`)
+- `--gguf-local PATH` (GGUF Qwen) - Use local GGUF file directly
 
 ## Environment Setup
 
@@ -72,7 +84,15 @@ py -m pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2
 
 **Critical:** Nunchaku 1.2.1 requires `diffusers==0.36.x`. Version 0.37+ has breaking API changes causing `pos_embed` errors.
 
-### venv for Rapid Qwen / FLUX.2 Klein (shared, requires recent diffusers)
+### Adding GGUF support to the Nunchaku venv
+```powershell
+.\.venv\Scripts\activate
+pip install -U gguf
+```
+
+GGUF Qwen requires `diffusers>=0.36.0`, so it can share the Nunchaku venv (`diffusers==0.36.x`).
+
+### venv for Rapid Qwen / FLUX.2 Klein (requires latest diffusers)
 ```powershell
 py -3.11 -m venv .venv-flux2
 .\.venv-flux2\Scripts\activate
@@ -108,6 +128,15 @@ All scripts share this preprocessing flow:
 - 3-tier offload: default `enable_model_cpu_offload()`, `--offload` for sequential, `--no-offload` for full GPU
 - Supports negative prompt and true CFG scale
 
+**Qwen Rapid GGUF**:
+- GGUF quantized version of Rapid-AIO-V23 (from `Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF`)
+- Default: Q3_K (~10GB), also available: Q2_K (~7.4GB) through Q8_0 (~21.8GB)
+- Loaded via `from_single_file` + `GGUFQuantizationConfig`
+- Base pipeline: `Qwen/Qwen-Image-Edit-2511`
+- Transformer config: local `qwen-image-edit-transformer-config/config.json`
+- 3-tier offload: default `enable_model_cpu_offload()`, `--offload` for sequential, `--no-offload` for full GPU
+- Requires `gguf` package
+
 **FLUX.2 Klein 4B**:
 - 4B parameter rectified flow transformer (distilled)
 - Prefers bf16, falls back to fp16
@@ -135,6 +164,14 @@ Edit constants at top of each script for fixed values:
 - `TRANSFORMER_ID` (`prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23`)
 - `BASE_MODEL_ID` (`Qwen/Qwen-Image-Edit-2511`)
 
+**simple_image_edit_gguf_qwen.py**:
+- `PROMPT`, `TRUE_CFG_SCALE` (1.0), `GUIDANCE_SCALE` (1.0), `NEGATIVE_PROMPT` (" ")
+- `NUM_INFERENCE_STEPS` (4)
+- `GGUF_REPO` (`Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF`)
+- `GGUF_FILENAME` (`v23/Qwen-Rapid-NSFW-v23_Q3_K.gguf`)
+- `TRANSFORMER_CONFIG` (`qwen-image-edit-transformer-config`)
+- `BASE_MODEL_ID` (`Qwen/Qwen-Image-Edit-2511`)
+
 **simple_image_edit_flux2_klein.py**:
 - `PROMPT`, `GUIDANCE_SCALE` (1.0)
 - `NUM_INFERENCE_STEPS` (20)
@@ -154,6 +191,8 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 
 **Qwen Rapid**: Transformer from `prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23`, base `Qwen/Qwen-Image-Edit-2511`
 
+**Qwen GGUF**: GGUF from `Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF/v23/`, config from local `qwen-image-edit-transformer-config/`
+
 **FLUX.2 Klein**: `black-forest-labs/FLUX.2-klein-4B`
 
 **Z-Image** (archived): `unsloth/Z-Image-Turbo-unsloth-bnb-4bit`
@@ -167,7 +206,9 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | `pos_embed` error (Qwen) | Install `diffusers>=0.36.0,<0.37.0` |
 | Transformer load error (Qwen) | Check `--steps` (4/8) and `--rank` (32/128) combo |
 | `Flux2KleinPipeline` not found | Need latest diffusers: `pip install -U git+https://github.com/huggingface/diffusers` |
-| Qwen + FLUX.2 conflict | Use separate venvs (diffusers version incompatible) |
+| `GGUFQuantizationConfig` not found | Need `diffusers>=0.36.0` + gguf: `pip install "diffusers>=0.36.0" gguf` |
+| GGUF `from_single_file` fails | Ensure `qwen-image-edit-transformer-config/config.json` exists; check diffusers version |
+| Qwen (nunchaku/GGUF) + FLUX.2 conflict | Use separate venvs (diffusers version incompatible). Nunchaku and GGUF can share the same 0.36.x venv |
 
 ## Cache Management
 
@@ -182,5 +223,6 @@ hf cache rm <revision_id>
 
 - Qwen (Nunchaku): `{input_stem}_filtered.png`
 - Qwen (Rapid): `{input_stem}_filtered_rapid.png`
+- Qwen (GGUF): `{input_stem}_filtered_gguf.png`
 - FLUX.2 Klein: `{input_stem}_filtered_klein.png`
 - Z-Image: `{input_stem}_filtered_zit.png`

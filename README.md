@@ -2,28 +2,9 @@
 
 # diffusersを使った単一スクリプトでAI画像編集を行うコードサンプル
 
-**Qwen-Image-Edit-2509 Lightning (Nunchaku版)**: `simple_image_edit_nunchaku_qwen.py`
-
 **「画像ファイル1枚を引数に取って、編集した画像を出力」** する用途を想定しています。
 
 > **対象環境:** GeForce RTX 3xxx (VRAM 12GB) 程度の環境で動作させることを目指してモデルを選定・調整しています。より高性能なGPUでは `--no-offload` や高解像度での処理も可能ですが、蒸留されていないモデルを選定すべきでしょう。
-
-> **備考1:** Z-Image Turbo (4bit)もテストしましたが要求を満たす性能を発揮させることができませんでした。一応検証したスクリプト(`simple_image_edit_zit.py`)を残してあります。
-
-> **備考2:** FLUX.2 [klein] 4B は利用できましたが、diffusers最新版を要求するためnunchaku版Qwen-Image-Editとは共存できません。venvを分ける必要があります。(`simple_image_edit_flux2_klein.py`)
-
-> `pip install -U git+https://github.com/huggingface/diffusers`
-
-> **備考3:** Qwen-Image-Edit-Rapid-AIO-V23ベースのDiffusers-compatible版 (`simple_image_edit_rapid_qwen.py`)は利用できましたが、時間が掛かりすぎるのが難でした。
-
----
-
-## Qwen-Image-Edit-2509 Lightning (Nunchaku版)
-
-### 概要
-
-Nunchaku の Lightning 重み（`.safetensors`）を使って `Qwen/Qwen-Image-Edit-2509` を高速に動かします。
-サンプル構成（scheduler / model_path / VRAMに応じた offload 分岐）に沿って実装しています。
 
 ### 特徴
 
@@ -40,6 +21,21 @@ Nunchaku の Lightning 重み（`.safetensors`）を使って `Qwen/Qwen-Image-E
 
 > **Tip:** 常に同じプロンプトを使用する場合は、スクリプト内の `PROMPT = "..."` 行を直接編集してください。
 
+---
+
+## Qwen-Image-Edit-2509 Lightning (Nunchaku版)
+
+`simple_image_edit_nunchaku_qwen.py`
+
+### 概要
+
+Nunchaku版Lightningを使って `Qwen/Qwen-Image-Edit-2509` を高速に動かします。
+サンプル構成（scheduler / model_path / VRAMに応じた offload 分岐）に沿って実装しています。
+
+* モデル: [nunchaku-ai/nunchaku-qwen-image-edit-2509](https://huggingface.co/nunchaku-ai/nunchaku-qwen-image-edit-2509)（デフォルト: lightning-251115、約12GB）
+* ベース: `Qwen/Qwen-Image-Edit-2509`
+* 8ステップ推論（蒸留済み）
+
 ### 実行例
 
 ```powershell
@@ -47,6 +43,29 @@ py .\simple_image_edit_nunchaku_qwen.py .\sample.png
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png --prompt "Remove text and enhance image quality."
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png --pre-resize 2m --progress --mem-log
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png --no-offload
+```
+
+---
+
+## Qwen-Image-Edit-Rapid GGUF量子化版
+
+`simple_image_edit_gguf_qwen.py`
+
+### 概要
+
+Qwen-Image-Edit-Rapid-AIO-V23 の GGUF 量子化モデルを使った画像編集スクリプトです。Nunchaku版と異なり**専用のコンパイル済みwheelが不要**で、pip だけで環境構築が完了します。
+
+* モデル: [Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF](https://huggingface.co/Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF)（デフォルト: v23 Q3_K、約10GB）
+* ベース: `Qwen/Qwen-Image-Edit-2511`
+* 4ステップ推論（蒸留済み）
+
+### 実行例
+
+```powershell
+py .\simple_image_edit_gguf_qwen.py .\sample.png
+py .\simple_image_edit_gguf_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
+py .\simple_image_edit_gguf_qwen.py .\sample.png --pre-resize 2m --offload --progress
+py .\simple_image_edit_gguf_qwen.py .\sample.png --gguf-file v23/Qwen-Rapid-NSFW-v23_Q2_K.gguf
 ```
 
 ---
@@ -66,7 +85,8 @@ py .\simple_image_edit_nunchaku_qwen.py .\sample.png --no-offload
 * pillow
 * huggingface_hub
 * psutil（`--mem-log` を使う場合）
-* nunchaku
+* nunchaku (nunchaku版)
+* gguf (gguf版)
 
 ---
 
@@ -85,6 +105,7 @@ python -m pip install -U pip
 ```powershell
 pip install -U pillow huggingface_hub psutil transformers accelerate safetensors
 pip install "diffusers>=0.36.0,<0.37.0"
+pip install -U gguf
 ```
 
 nunchaku はリリースアセットの中からバージョンに合ったコンパイル済のwheelを見つけてpipで導入するのが簡単です。
@@ -142,33 +163,67 @@ hf cache rm <リビジョンID>
 
 ---
 
+## 備考
+
+### Z-Image Turbo (4bit)版 `simple_image_edit_zit.py`
+
+* モデル: [unsloth/Z-Image-Turbo-unsloth-bnb-4bit](https://huggingface.co/unsloth/Z-Image-Turbo-unsloth-bnb-4bit)
+
+テストしましたが要求を満たす性能を発揮させることができませんでした。
+
+### FLUX.2 [klein] 4B 版 `simple_image_edit_flux2_klein.py`
+
+* モデル: [black-forest-labs/FLUX.2-klein-4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)
+
+遜色なく利用できましたが、diffusers最新版を要求するため nunchaku版とは共存できません。venvを分ける必要があります。
+
+> `pip install -U git+https://github.com/huggingface/diffusers`
+
+### Qwen-Image-Edit-Rapid-AIO-V23ベースのDiffusers-compatible版 `simple_image_edit_rapid_qwen.py`
+
+* モデル: [prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23](https://huggingface.co/prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23)
+
+遜色なく利用できましたが、時間が掛かりすぎます（1枚30分くらいかかった）。
+
+---
+
 ## English Documentation
 
-This script is designed to **take a single image file as input and output an edited image**.
+Designed to **take a single image file as input and output an edited image**.
 
 > **Target Environment:** Models are selected and tuned to run on GeForce RTX 3xxx (12GB VRAM) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
-> **Note:** Z-Image Turbo (4bit) was also tested but could not achieve satisfactory performance for our requirements. The test script (`simple_image_edit_zit.py`) has been kept for reference.
+### Features
 
-### Qwen-Image-Edit-2509 Lightning (Nunchaku)
-
-Runs `Qwen/Qwen-Image-Edit-2509` at high speed using Nunchaku Lightning weights (`.safetensors`). Implements the official sample structure (scheduler / model_path / VRAM-based offload branching).
-
-**Features:**
-- Input: Single image (official sample supports multiple images, but this script is for single input)
-- `--prompt "..."`: Specify prompt (uses `PROMPT` constant in source if omitted)
-- `--pre-resize 1m|2m`: Reduce total pixels while maintaining aspect ratio
-- Max size: **Fits within 2048x2048 (downscale only)**
-- **Height padded to multiple of 16** (padding, not resizing)
-- High VRAM: `enable_model_cpu_offload()`
-- Low VRAM: `transformer.set_offload(...num_blocks_on_gpu=...)` + `enable_sequential_cpu_offload()` (follows official sample)
-- `--no-offload`: Disable offloading (faster but requires more VRAM)
-- `--seed N`: Random seed (random if omitted)
-- `--progress` / `--mem-log`
+* Input: Single image (official samples support multiple images, but these scripts are for single input)
+* `--prompt "..."`: Specify prompt (uses `PROMPT` constant in source if omitted)
+* `--pre-resize 1m|2m`: Reduce total pixels while maintaining aspect ratio
+* Max size: **Fits within 2048x2048 (downscale only)**
+* **Height padded to multiple of 16** (padding, not resizing)
+* High VRAM: `enable_model_cpu_offload()`
+* Low VRAM: `transformer.set_offload(...num_blocks_on_gpu=...)` + `enable_sequential_cpu_offload()` (follows official sample)
+* `--no-offload`: Disable offloading (faster but requires more VRAM)
+* `--seed N`: Random seed (random if omitted)
+* `--progress` / `--mem-log`
 
 > **Tip:** For a fixed prompt, edit the `PROMPT = "..."` line in the script directly.
 
-**Examples:**
+---
+
+### Qwen-Image-Edit-2509 Lightning (Nunchaku)
+
+`simple_image_edit_nunchaku_qwen.py`
+
+#### Overview
+
+Runs `Qwen/Qwen-Image-Edit-2509` at high speed using Nunchaku Lightning weights. Implements the official sample structure (scheduler / model_path / VRAM-based offload branching).
+
+* Model: [nunchaku-ai/nunchaku-qwen-image-edit-2509](https://huggingface.co/nunchaku-ai/nunchaku-qwen-image-edit-2509) (default: lightning-251115, ~12GB)
+* Base: `Qwen/Qwen-Image-Edit-2509`
+* 8-step inference (distilled)
+
+#### Examples
+
 ```bash
 python simple_image_edit_nunchaku_qwen.py ./sample.png
 python simple_image_edit_nunchaku_qwen.py ./sample.png --prompt "Remove text and enhance image quality."
@@ -176,21 +231,50 @@ python simple_image_edit_nunchaku_qwen.py ./sample.png --pre-resize 2m --progres
 python simple_image_edit_nunchaku_qwen.py ./sample.png --no-offload
 ```
 
+---
+
+### Qwen-Image-Edit-Rapid GGUF Quantized
+
+`simple_image_edit_gguf_qwen.py`
+
+#### Overview
+
+Image editing using GGUF-quantized Qwen-Image-Edit-Rapid-AIO-V23. Unlike the Nunchaku version, **no pre-compiled wheel is needed** — setup is done entirely via pip.
+
+* Model: [Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF](https://huggingface.co/Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF) (default: Q3_K, ~10GB)
+* Base: `Qwen/Qwen-Image-Edit-2511`
+* 4-step inference (distilled)
+
+#### Examples
+
+```bash
+python simple_image_edit_gguf_qwen.py ./sample.png
+python simple_image_edit_gguf_qwen.py ./sample.png --prompt "Enhance quality." --seed 42
+python simple_image_edit_gguf_qwen.py ./sample.png --pre-resize 2m --offload --progress
+python simple_image_edit_gguf_qwen.py ./sample.png --gguf-file v23/Qwen-Rapid-NSFW-v23_Q2_K.gguf
+```
+
+---
+
 ### Requirements
 
-- OS: Windows / Linux (CUDA required)
-- GPU: NVIDIA recommended
-- Python: 3.10-3.12 recommended (3.11 is most stable)
-- PyTorch: **CUDA version** (e.g., `cu130` depends on your installed PyTorch CUDA build)
+* OS: Windows / Linux (CUDA required)
+* GPU: NVIDIA recommended
+* Python: 3.10-3.12 recommended (3.11 is most stable)
+* PyTorch: **CUDA version** (e.g., `cu130` depends on your installed PyTorch CUDA build)
 
-**Dependencies:**
-- torch (CUDA version)
-- diffusers
-- transformers, accelerate, safetensors
-- pillow
-- huggingface_hub
-- psutil (for `--mem-log`)
-- nunchaku
+#### Dependencies
+
+* torch (CUDA version)
+* diffusers
+* transformers, accelerate, safetensors
+* pillow
+* huggingface_hub
+* psutil (for `--mem-log`)
+* nunchaku (Nunchaku version)
+* gguf (GGUF version)
+
+---
 
 ### Installation (Windows / PowerShell)
 
@@ -205,32 +289,39 @@ python -m pip install -U pip
 ```powershell
 pip install -U pillow huggingface_hub psutil transformers accelerate safetensors
 pip install "diffusers>=0.36.0,<0.37.0"
+pip install -U gguf
 ```
 
-For Nunchaku, install the pre-compiled wheel:
+For Nunchaku, install the pre-compiled wheel matching your environment:
+
+> Example: Windows, Python 3.11, Torch 2.10+cu130
+
 ```powershell
 py -m pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
 ```
-> For Python 3.11, Torch 2.10+cu130
 
 **Important:** Nunchaku 1.2.1 requires `diffusers==0.36.x`. The git main version (0.37.0.dev) has API changes that cause `pos_embed` related errors.
 
 **Note:** First run will download models (**30-100GB total**). Models are cached in the Hugging Face cache directory.
 
+---
+
 ### Troubleshooting
 
 **A) Stuck at 0% (especially first run)**
-- First run involves heavy model download and loading, which may appear stuck
-- Use `--progress` to show download progress
-- Use `--pre-resize 1m` for large inputs
+* First run involves heavy model download and loading, which may appear stuck
+* Use `--progress` to show download progress
+* Use `--pre-resize 1m` for large inputs
 
 **B) Shape mismatch (width/height vs input image latents)**
-- This script **caps input to 2048 and pads to multiples**, so this should rarely occur
-- If you modify width/height manually, ensure **image size matches width/height**
+* These scripts **cap input to 2048 and pad to multiples**, so this should rarely occur
+* If you modify width/height manually, ensure **image size matches width/height**
 
 **C) OOM (CUDA out of memory)**
-- Use `--pre-resize 1m`
-- Don't use `--no-offload` (keep offload enabled)
+* Use `--pre-resize 1m`
+* Don't use `--no-offload` (keep offload enabled)
+
+---
 
 ### Tips: Cache Management
 
@@ -248,14 +339,38 @@ hf cache rm <revision_id>
 ```
 
 Default cache locations:
-- Windows: `C:\Users\<username>\.cache\huggingface\hub`
-- Linux/Mac: `~/.cache/huggingface/hub`
+* Windows: `C:\Users\<username>\.cache\huggingface\hub`
+* Linux/Mac: `~/.cache/huggingface/hub`
+
+---
+
+### Notes
+
+#### Z-Image Turbo (4bit) `simple_image_edit_zit.py`
+
+* Model: [unsloth/Z-Image-Turbo-unsloth-bnb-4bit](https://huggingface.co/unsloth/Z-Image-Turbo-unsloth-bnb-4bit)
+
+Tested but could not achieve satisfactory performance for our requirements.
+
+#### FLUX.2 [klein] 4B `simple_image_edit_flux2_klein.py`
+
+* Model: [black-forest-labs/FLUX.2-klein-4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)
+
+Worked well, but requires latest diffusers and cannot coexist with the Nunchaku version. Separate venv required.
+
+> `pip install -U git+https://github.com/huggingface/diffusers`
+
+#### Qwen-Image-Edit-Rapid-AIO-V23 (Diffusers-compatible) `simple_image_edit_rapid_qwen.py`
+
+* Model: [prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23](https://huggingface.co/prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23)
+
+Worked well, but too slow (~30 minutes per image).
 
 ---
 
 ## Credits
 
-- Nunchaku Lightning example structure (scheduler config, model_path format, offload branching) follows the official reference sample
+* Nunchaku Lightning example structure (scheduler config, model_path format, offload branching) follows the official reference sample
 
 ---
 

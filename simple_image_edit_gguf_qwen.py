@@ -1,7 +1,8 @@
-# simple_image_edit_zit.py
+# simple_image_edit_gguf_qwen.py
 #
-# Z-Image Turbo img2img runner (single image)
-# Default model: unsloth/Z-Image-Turbo-unsloth-bnb-4bit (4bit quantized)
+# Single-image editor using Qwen-Image-Edit-Rapid-AIO-V23 GGUF quantized model.
+# Model: Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF (Q3_K default)
+# Base:  Qwen/Qwen-Image-Edit-2511
 #
 # Features:
 # - Input: 1 image file path
@@ -9,7 +10,20 @@
 # - Size cap: fit within 2048x2048 (keep aspect; only scales DOWN)
 # - Align: height to multiple of 16, width to multiple of 8 (by padding)
 # - Optional pre-resize by total pixels (1m/2m)
-# - Prefers bf16 over fp16 to avoid NaN/black output issues
+# - Optional HF download progress bars (--progress)
+# - Optional memory log (--mem-log, requires psutil)
+#
+# GGUF quantized transformer loaded via diffusers from_single_file + GGUFQuantizationConfig.
+# Requires recent diffusers with QwenImageEditPlusPipeline and GGUF support.
+#
+# Install:
+#   pip install -U pip pillow huggingface_hub psutil transformers accelerate safetensors
+#   pip install -U diffusers gguf
+#
+# Usage:
+#   py .\simple_image_edit_gguf_qwen.py .\sample.png
+#   py .\simple_image_edit_gguf_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
+#   py .\simple_image_edit_gguf_qwen.py .\sample.png --pre-resize 2m --progress
 
 from __future__ import annotations
 
@@ -26,13 +40,13 @@ from pathlib import Path
 # Fixed parameters (EDIT HERE)
 # =======================
 PROMPT = "Correct the unnatural line breaks at the page boundaries. Remove text-like elements. Remove MPEG noise and low-resolution noise. Maintain identical camera angle, framing, and perspective. Maintain character's posture and body orientation. Make sure to leave character's facial features identical and costume."
-NEGATIVE_PROMPT = ""
+TRUE_CFG_SCALE = 1.0
+GUIDANCE_SCALE = 1.0
+NEGATIVE_PROMPT = " "
 
-NUM_STEPS = 9
-GUIDANCE_SCALE = 0.0
-STRENGTH = 0.5
+NUM_INFERENCE_STEPS = 4
 
-OUT_SUFFIX = "_filtered_zit"
+OUT_SUFFIX = "_filtered_gguf"
 OUT_EXT = ".png"
 
 MAX_W = 2048
@@ -40,8 +54,10 @@ MAX_H = 2048
 W_MULT = 8
 H_MULT = 16
 
-MODEL_DEFAULT = "unsloth/Z-Image-Turbo-unsloth-bnb-4bit"
-MODEL_OFFICIAL = "Tongyi-MAI/Z-Image-Turbo"
+GGUF_REPO = "Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF"
+GGUF_FILENAME = "v23/Qwen-Rapid-NSFW-v23_Q3_K.gguf"
+TRANSFORMER_CONFIG = "qwen-image-edit-transformer-config"
+BASE_MODEL_ID = "Qwen/Qwen-Image-Edit-2511"
 # =======================
 
 
@@ -54,9 +70,10 @@ def die(msg: str, code: int = 1) -> None:
     sys.exit(code)
 
 
-def require_imports(need_bitsandbytes: bool = True):
+def require_imports():
     missing = []
-    for name in ["torch", "diffusers", "pillow", "huggingface_hub", "accelerate", "transformers", "safetensors"]:
+    for name in ["torch", "diffusers", "pillow", "huggingface_hub",
+                 "accelerate", "transformers", "safetensors", "gguf"]:
         try:
             if name == "pillow":
                 from PIL import Image  # noqa
@@ -64,12 +81,6 @@ def require_imports(need_bitsandbytes: bool = True):
                 __import__(name)
         except ModuleNotFoundError:
             missing.append(name)
-
-    if need_bitsandbytes:
-        try:
-            import bitsandbytes  # noqa
-        except ModuleNotFoundError:
-            missing.append("bitsandbytes")
 
     if missing:
         die(
@@ -189,32 +200,58 @@ def fit_and_align(img, max_w: int, max_h: int, w_mult: int, h_mult: int):
 
 
 def pick_dtype(torch):
-    # Prefer bf16 when supported (fixes NaN/black output in many cases)
+    """Pick best dtype: bf16 if supported, otherwise fp16."""
     bf16_ok = bool(getattr(torch.cuda, "is_bf16_supported", lambda: False)())
     dtype = torch.bfloat16 if bf16_ok else torch.float16
     return dtype, bf16_ok
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Z-Image Turbo img2img (default: unsloth-4bit)")
+    ap = argparse.ArgumentParser(description="Qwen-Image-Edit-Rapid-AIO-V23 GGUF (single image)")
     ap.add_argument("input", help="入力画像ファイル")
     ap.add_argument("--suffix", default=OUT_SUFFIX, help="出力suffix")
     ap.add_argument("--pre-resize", type=parse_pre_resize, default=None, metavar="1m|2m|NUM",
                     help="総ピクセル数を縮小")
     ap.add_argument("--progress", action="store_true", help="HFダウンロード進捗を表示")
     ap.add_argument("--mem-log", action="store_true", help="メモリログ")
-    ap.add_argument("--offload", action="store_true", help="VRAM節約（遅いが安定）")
-    ap.add_argument("--official", action="store_true",
-                    help="公式モデル Tongyi-MAI/Z-Image-Turbo を使用（bitsandbytes不要）")
+    ap.add_argument("--no-offload", action="store_true", help="オフロード無効（高VRAM向け）")
+    ap.add_argument("--offload", action="store_true",
+                    help="sequential CPU offload（低VRAM向け、遅いがVRAM節約）")
+    ap.add_argument("--steps", type=int, default=NUM_INFERENCE_STEPS,
+                    help="推論ステップ数 (default: 4)")
+    ap.add_argument("--guidance-scale", type=float, default=GUIDANCE_SCALE,
+                    help="ガイダンススケール (default: 1.0)")
+    ap.add_argument("--true-cfg-scale", type=float, default=TRUE_CFG_SCALE,
+                    help="true CFGスケール (default: 1.0)")
     ap.add_argument("--prompt", default=None, help="プロンプト上書き")
+    ap.add_argument("--negative-prompt", default=None, help="ネガティブプロンプト上書き")
     ap.add_argument("--seed", type=int, default=None, help="乱数シード（省略時はランダム）")
+    ap.add_argument("--gguf-repo", default=GGUF_REPO,
+                    help=f"GGUFモデルのHFリポジトリ (default: {GGUF_REPO})")
+    ap.add_argument("--gguf-file", default=GGUF_FILENAME,
+                    help=f"リポジトリ内のGGUFファイルパス (default: {GGUF_FILENAME})")
+    ap.add_argument("--gguf-local", default=None, metavar="PATH",
+                    help="ローカルGGUFファイルを直接指定（--gguf-repo/--gguf-fileより優先）")
     args = ap.parse_args()
 
-    # bitsandbytes is only needed for unsloth-4bit model
-    require_imports(need_bitsandbytes=not args.official)
+    if args.no_offload and args.offload:
+        die("エラー: --no-offload と --offload は同時に指定できません。")
+
+    require_imports()
     set_hf_progress(args.progress)
 
     import torch
+
+    try:
+        from diffusers.models import QwenImageTransformer2DModel
+        from diffusers import QwenImageEditPlusPipeline, GGUFQuantizationConfig
+    except ImportError as ex:
+        die(
+            "エラー: 必要なdiffusersクラスが見つかりません。\n"
+            "diffusers のバージョンが古い可能性があります。\n"
+            "  pip install -U diffusers gguf\n"
+            f"  詳細: {ex}"
+        )
 
     if not torch.cuda.is_available():
         die("エラー: CUDA GPU が見つかりません。")
@@ -232,73 +269,103 @@ def main():
     img, (out_w, out_h) = fit_and_align(img, MAX_W, MAX_H, W_MULT, H_MULT)
     eprint(f"[info] final image size: {out_w}x{out_h}")
 
-    # Pick dtype
+    # Pick dtype (bf16 preferred, fp16 fallback)
     dtype, bf16_ok = pick_dtype(torch)
     eprint(f"[info] dtype={dtype} (bf16_supported={bf16_ok})")
 
-    # Load pipeline
-    model_id = MODEL_OFFICIAL if args.official else MODEL_DEFAULT
-
-    try:
-        from diffusers import ZImageImg2ImgPipeline
-    except ImportError:
-        die(
-            "エラー: diffusers に ZImageImg2ImgPipeline が見つかりません。\n"
-            "diffusers を更新してください:\n"
-            "  pip install -U diffusers\n"
-        )
-
-    eprint(f"[info] loading pipeline: {model_id}")
-    t0 = time.time()
-    pipe = ZImageImg2ImgPipeline.from_pretrained(model_id, torch_dtype=dtype)
-    eprint(f"[info] pipeline loaded ({time.time()-t0:.1f}s)")
-
-    # Move to GPU
-    pipe = pipe.to("cuda")
-
-    # VRAM optimizations
-    try:
-        pipe.enable_attention_slicing("max")
-    except Exception:
+    # Resolve GGUF file path
+    if args.gguf_local:
+        gguf_path = args.gguf_local
+        if not os.path.isfile(gguf_path):
+            die(f"エラー: GGUFファイルが見つかりません: {gguf_path}")
+        eprint(f"[info] using local GGUF: {gguf_path}")
+    else:
+        from huggingface_hub import hf_hub_download
+        eprint(f"[info] downloading GGUF: {args.gguf_repo} / {args.gguf_file}")
+        t_dl = time.time()
         try:
-            pipe.enable_attention_slicing()
-        except Exception:
-            pass
-    try:
-        pipe.enable_vae_slicing()
-    except Exception:
-        pass
-    try:
-        pipe.enable_vae_tiling()
-    except Exception:
-        pass
+            gguf_path = hf_hub_download(
+                repo_id=args.gguf_repo,
+                filename=args.gguf_file,
+            )
+        except Exception as ex:
+            die(
+                f"エラー: GGUFファイルのダウンロードに失敗しました。\n"
+                f"  repo: {args.gguf_repo}\n"
+                f"  file: {args.gguf_file}\n"
+                f"  詳細: {ex}"
+            )
+        eprint(f"[info] GGUF ready: {gguf_path} ({time.time()-t_dl:.1f}s)")
 
-    if args.offload:
+    # Load transformer from GGUF
+    eprint(f"[info] loading GGUF transformer (config: {TRANSFORMER_CONFIG})")
+    t0 = time.time()
+    try:
+        transformer = QwenImageTransformer2DModel.from_single_file(
+            gguf_path,
+            quantization_config=GGUFQuantizationConfig(compute_dtype=dtype),
+            config=TRANSFORMER_CONFIG,
+            torch_dtype=dtype,
+        )
+    except Exception as ex:
+        die(
+            f"エラー: GGUF transformerのロードに失敗しました。\n"
+            f"  gguf: {gguf_path}\n"
+            f"  config: {TRANSFORMER_CONFIG}\n"
+            f"  詳細: {ex}"
+        )
+    eprint(f"[info] transformer loaded ({time.time()-t0:.1f}s)")
+
+    # Load pipeline with base model + GGUF transformer
+    eprint(f"[info] loading pipeline: {BASE_MODEL_ID}")
+    t1 = time.time()
+    try:
+        pipeline = QwenImageEditPlusPipeline.from_pretrained(
+            BASE_MODEL_ID,
+            transformer=transformer,
+            torch_dtype=dtype,
+        )
+    except Exception as ex:
+        die(
+            f"エラー: パイプラインのロードに失敗しました。\n"
+            f"  base model: {BASE_MODEL_ID}\n"
+            f"  詳細: {ex}"
+        )
+    eprint(f"[info] pipeline loaded ({time.time()-t1:.1f}s)")
+    mem("after load", torch)
+
+    # Offload strategy
+    if args.no_offload:
+        eprint("[info] --no-offload: pipeline.to('cuda')")
+        pipeline.to("cuda")
+    elif args.offload:
+        eprint("[info] --offload: enable_sequential_cpu_offload()")
+        pipeline.enable_sequential_cpu_offload()
+    else:
         eprint("[info] enable_model_cpu_offload()")
-        pipe.enable_model_cpu_offload()
+        pipeline.enable_model_cpu_offload()
 
-    mem("after pipeline ready", torch)
+    mem("after offload setup", torch)
 
-    # Inference
+    # Run inference
     prompt = args.prompt if args.prompt else PROMPT
+    negative_prompt = args.negative_prompt if args.negative_prompt else NEGATIVE_PROMPT
     gen = None
     if args.seed is not None:
         gen = torch.Generator("cuda").manual_seed(args.seed)
         eprint(f"[info] seed={args.seed}")
 
     eprint("[info] starting inference...")
-    t1 = time.time()
+    t2 = time.time()
 
     try:
-        out = pipe(
+        output = pipeline(
+            image=[img],
             prompt=prompt,
-            negative_prompt=NEGATIVE_PROMPT,
-            image=img,
-            strength=STRENGTH,
-            num_inference_steps=NUM_STEPS,
-            guidance_scale=GUIDANCE_SCALE,
-            width=out_w,
-            height=out_h,
+            negative_prompt=negative_prompt,
+            guidance_scale=args.guidance_scale,
+            true_cfg_scale=args.true_cfg_scale,
+            num_inference_steps=args.steps,
             generator=gen,
         )
     except torch.cuda.OutOfMemoryError:
@@ -306,19 +373,20 @@ def main():
             "エラー: CUDA OOM\n"
             "対策:\n"
             "  - --pre-resize 1m を使う\n"
-            "  - --offload を使う\n"
+            "  - --offload を使う（sequential CPU offload、遅いがVRAM節約）\n"
+            "  - より小さい量子化を使う（例: Q2_K）\n"
         )
 
-    eprint(f"[info] inference done ({time.time()-t1:.1f}s)")
+    eprint(f"[info] inference done ({time.time()-t2:.1f}s)")
 
     # Save output
-    out_img = out.images[0]
+    out_img = output.images[0]
     out_path = in_path.with_name(in_path.stem + args.suffix + OUT_EXT)
     out_img.save(out_path)
     print(str(out_path))
 
     # Cleanup
-    del pipe, out
+    del pipeline, transformer, output
     gc.collect()
     torch.cuda.empty_cache()
 

@@ -21,6 +21,9 @@ pillow>=10.4.0
 # 4bit quantization (optional: --no-4bit なら不要だが入れておくと便利)
 bitsandbytes>=0.43.0
 
+# GGUF quantized model support (GGUF版で必要)
+gguf>=0.10.0
+
 # Tokenizer / text deps (環境によって必要)
 sentencepiece>=0.2.0
 protobuf>=4.25.0
