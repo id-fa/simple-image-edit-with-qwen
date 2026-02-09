@@ -100,23 +100,59 @@ py -3.11 -m venv .venv
 python -m pip install -U pip
 ```
 
-### 2) 依存のインストール（例）
+### 2) CUDA対応 PyTorch のインストール
+
+PyTorch は**CUDA対応版**を明示的にインストールする必要があります。`--index-url` を指定しないと CPU 版がインストールされる場合があります。
+
+> ※ CUDA 13.0 の場合（RTX 30xx〜50xx）
 
 ```powershell
-pip install -U pillow huggingface_hub psutil transformers accelerate safetensors
-pip install "diffusers>=0.36.0,<0.37.0"
-pip install -U gguf
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 ```
+
+> ※ CUDA 12.8 の場合
+
+```powershell
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+```
+
+利用可能なCUDAバージョンは [PyTorch公式](https://pytorch.org/get-started/locally/) で確認してください。インストール後、以下で確認できます:
+
+```powershell
+python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
+```
+
+### 3) diffusers のインストール
+
+Nunchaku版・GGUF版は `diffusers==0.36.x` が必要です。
+
+```powershell
+pip install "diffusers>=0.36.0,<0.37.0"
+```
+
+**重要:** git main版（0.37.0.dev）はAPIが変更されており、`pos_embed` `max_txt_seq_len` `txt_seq_lens` 関連のエラーが発生します。
+
+### 4) nunchaku のインストール（GGUF版のみ使用する場合は不要）
 
 nunchaku はリリースアセットの中からバージョンに合ったコンパイル済のwheelを見つけてpipで導入するのが簡単です。
 
-> ※ Windows、Python 3.11、Torch2.10+cu130の場合
+> ※ Windows、Python 3.11、Torch 2.10 + CUDA 13.0 の場合
 
 ```powershell
-py -m pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
+pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
 ```
 
-**重要:** Nunchaku 1.2.1 は `diffusers==0.36.x` が必要です。git main版（0.37.0.dev）はAPIが変更されており、`pos_embed` `max_txt_seq_len` `txt_seq_lens` 関連のエラーが発生します。
+その他の環境は [nunchaku リリースページ](https://github.com/nunchaku-ai/nunchaku/releases) で対応する wheel を探してください。
+
+### 5) その他の依存ライブラリのインストール
+
+```powershell
+pip install -U pillow huggingface_hub psutil transformers accelerate safetensors gguf
+```
+
+> `psutil` は `--mem-log` 使用時のみ必要、`gguf` は GGUF版のみ必要ですが、まとめて入れても問題ありません。
+
+---
 
 **注意:** 初回起動時にモデルのダウンロードが発生します（**30〜100GB程度**）。ダウンロード先は Hugging Face のキャッシュディレクトリです。
 
@@ -278,29 +314,67 @@ python simple_image_edit_gguf_qwen.py ./sample.png --gguf-file v23/Qwen-Rapid-NS
 
 ### Installation (Windows / PowerShell)
 
-**1) Create venv:**
+#### 1) Create venv
+
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\activate
 python -m pip install -U pip
 ```
 
-**2) Install dependencies:**
+#### 2) Install CUDA-enabled PyTorch
+
+You must explicitly install the **CUDA build** of PyTorch. Without `--index-url`, pip may install the CPU-only version.
+
+> CUDA 13.0 (RTX 30xx–50xx):
+
 ```powershell
-pip install -U pillow huggingface_hub psutil transformers accelerate safetensors
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+```
+
+> CUDA 12.8:
+
+```powershell
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+```
+
+Check available CUDA versions at [pytorch.org](https://pytorch.org/get-started/locally/). Verify after install:
+
+```powershell
+python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
+```
+
+#### 3) Install diffusers
+
+Nunchaku and GGUF versions require `diffusers==0.36.x`.
+
+```powershell
 pip install "diffusers>=0.36.0,<0.37.0"
-pip install -U gguf
 ```
 
-For Nunchaku, install the pre-compiled wheel matching your environment:
+**Important:** The git main version (0.37.0.dev) has API changes that cause `pos_embed` / `max_txt_seq_len` / `txt_seq_lens` related errors.
 
-> Example: Windows, Python 3.11, Torch 2.10+cu130
+#### 4) Install nunchaku (skip if using GGUF version only)
+
+Install the pre-compiled wheel matching your environment from the release assets.
+
+> Example: Windows, Python 3.11, Torch 2.10 + CUDA 13.0
 
 ```powershell
-py -m pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
+pip install https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
 ```
 
-**Important:** Nunchaku 1.2.1 requires `diffusers==0.36.x`. The git main version (0.37.0.dev) has API changes that cause `pos_embed` related errors.
+For other environments, find the matching wheel on the [nunchaku releases page](https://github.com/nunchaku-ai/nunchaku/releases).
+
+#### 5) Install other dependencies
+
+```powershell
+pip install -U pillow huggingface_hub psutil transformers accelerate safetensors gguf
+```
+
+> `psutil` is only needed for `--mem-log`, and `gguf` is only needed for the GGUF version, but installing them together is harmless.
+
+---
 
 **Note:** First run will download models (**30-100GB total**). Models are cached in the Hugging Face cache directory.
 
