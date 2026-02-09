@@ -199,6 +199,15 @@ def fit_and_align(img, max_w: int, max_h: int, w_mult: int, h_mult: int):
     return img, (w, h)
 
 
+def preprocess_image(path, pre_resize_target, max_w, max_h, w_mult, h_mult, label="image"):
+    img = open_image(Path(path))
+    if pre_resize_target:
+        img, _ = pre_resize_to_total_pixels(img, pre_resize_target)
+    img, (w, h) = fit_and_align(img, max_w, max_h, w_mult, h_mult)
+    eprint(f"[info] {label} final size: {w}x{h}")
+    return img, (w, h)
+
+
 def pick_dtype(torch):
     """Pick best dtype: bf16 if supported, otherwise fp16."""
     bf16_ok = bool(getattr(torch.cuda, "is_bf16_supported", lambda: False)())
@@ -226,6 +235,8 @@ def main():
     ap.add_argument("--prompt", default=None, help="プロンプト上書き")
     ap.add_argument("--negative-prompt", default=None, help="ネガティブプロンプト上書き")
     ap.add_argument("--seed", type=int, default=None, help="乱数シード（省略時はランダム）")
+    ap.add_argument("--ref", action="append", default=[], metavar="FILE",
+                    help="参照画像を追加（最大2回指定可能、合計3画像まで）")
     ap.add_argument("--gguf-repo", default=GGUF_REPO,
                     help=f"GGUFモデルのHFリポジトリ (default: {GGUF_REPO})")
     ap.add_argument("--gguf-file", default=GGUF_FILENAME,
@@ -233,6 +244,9 @@ def main():
     ap.add_argument("--gguf-local", default=None, metavar="PATH",
                     help="ローカルGGUFファイルを直接指定（--gguf-repo/--gguf-fileより優先）")
     args = ap.parse_args()
+
+    if len(args.ref) > 2:
+        die("エラー: --ref は最大2回まで指定できます（入力画像含め合計3画像）。")
 
     if args.no_offload and args.offload:
         die("エラー: --no-offload と --offload は同時に指定できません。")
@@ -261,13 +275,14 @@ def main():
 
     # Load and preprocess image
     in_path = Path(args.input)
-    img = open_image(in_path)
+    img, (out_w, out_h) = preprocess_image(
+        in_path, args.pre_resize, MAX_W, MAX_H, W_MULT, H_MULT, label="input")
 
-    if args.pre_resize:
-        img, _ = pre_resize_to_total_pixels(img, args.pre_resize)
-
-    img, (out_w, out_h) = fit_and_align(img, MAX_W, MAX_H, W_MULT, H_MULT)
-    eprint(f"[info] final image size: {out_w}x{out_h}")
+    ref_images = []
+    for i, ref_path in enumerate(args.ref):
+        ref_img, _ = preprocess_image(
+            ref_path, args.pre_resize, MAX_W, MAX_H, W_MULT, H_MULT, label=f"ref[{i+1}]")
+        ref_images.append(ref_img)
 
     # Pick dtype (bf16 preferred, fp16 fallback)
     dtype, bf16_ok = pick_dtype(torch)
@@ -358,9 +373,13 @@ def main():
     eprint("[info] starting inference...")
     t2 = time.time()
 
+    image_list = [img] + ref_images
+    if len(image_list) > 1:
+        eprint(f"[info] image count: {len(image_list)}")
+
     try:
         output = pipeline(
-            image=[img],
+            image=image_list,
             prompt=prompt,
             negative_prompt=negative_prompt,
             guidance_scale=args.guidance_scale,
@@ -375,6 +394,7 @@ def main():
             "  - --pre-resize 1m を使う\n"
             "  - --offload を使う（sequential CPU offload、遅いがVRAM節約）\n"
             "  - より小さい量子化を使う（例: Q2_K）\n"
+            "  - --ref の数を減らす\n"
         )
 
     eprint(f"[info] inference done ({time.time()-t2:.1f}s)")

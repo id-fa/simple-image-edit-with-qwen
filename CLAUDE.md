@@ -12,7 +12,7 @@ Python scripts for AI-powered image editing using diffusion models:
 4. **simple_image_edit_flux2_klein.py** - FLUX.2 Klein 4B pipeline (requires separate venv with latest diffusers)
 5. **simple_image_edit_zit.py** - Z-Image Turbo (4bit) img2img pipeline (archived; did not meet quality requirements)
 
-All take a single image as input and output an edited version. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
+All take a single image as input (with optional `--ref` reference images) and output an edited version. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
 **Target Environment:** GeForce RTX 3xxx (VRAM 12GB) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
@@ -25,6 +25,7 @@ All take a single image as input and output an edited version. Prompts can be sp
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png --pre-resize 2m --progress
+py .\simple_image_edit_nunchaku_qwen.py .\sample.png --ref ref2.png --ref ref3.png --prompt "Combine elements"
 ```
 
 ### Qwen-Image-Edit-Rapid-AIO-V23 — requires recent diffusers
@@ -32,6 +33,7 @@ py .\simple_image_edit_nunchaku_qwen.py .\sample.png --pre-resize 2m --progress
 py .\simple_image_edit_rapid_qwen.py .\sample.png
 py .\simple_image_edit_rapid_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
 py .\simple_image_edit_rapid_qwen.py .\sample.png --pre-resize 2m --offload --progress
+py .\simple_image_edit_rapid_qwen.py .\sample.png --ref ref2.png --prompt "Combine elements"
 ```
 
 ### Qwen-Image-Edit-Rapid GGUF — requires diffusers 0.36.x + gguf
@@ -40,6 +42,7 @@ py .\simple_image_edit_gguf_qwen.py .\sample.png
 py .\simple_image_edit_gguf_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
 py .\simple_image_edit_gguf_qwen.py .\sample.png --pre-resize 2m --offload --progress
 py .\simple_image_edit_gguf_qwen.py .\sample.png --gguf-file v23/Qwen-Rapid-NSFW-v23_Q2_K.gguf
+py .\simple_image_edit_gguf_qwen.py .\sample.png --ref ref2.png --ref ref3.png --pre-resize 1m
 ```
 
 ### FLUX.2 Klein 4B — requires diffusers latest (git main)
@@ -47,12 +50,14 @@ py .\simple_image_edit_gguf_qwen.py .\sample.png --gguf-file v23/Qwen-Rapid-NSFW
 py .\simple_image_edit_flux2_klein.py .\sample.png
 py .\simple_image_edit_flux2_klein.py .\sample.png --prompt "Enhance quality." --seed 42
 py .\simple_image_edit_flux2_klein.py .\sample.png --pre-resize 1m --offload --progress
+py .\simple_image_edit_flux2_klein.py .\sample.png --ref ref2.png --ref ref3.png --ref ref4.png
 ```
 
 ### Common Options
 - `--prompt "..."` - Specify prompt (uses `PROMPT` constant if omitted)
 - `--seed N` - Random seed for reproducibility (random if omitted)
 - `--pre-resize 1m|2m` - Reduce total pixels while maintaining aspect ratio
+- `--ref FILE` - Add reference image (repeatable; Qwen: max 2, FLUX.2 Klein: max 3, Z-Image: ignored)
 - `--progress` - Show Hugging Face download progress
 - `--mem-log` - Display memory usage (requires psutil)
 - `--no-offload` - Disable offloading (requires high VRAM)
@@ -209,6 +214,7 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | `GGUFQuantizationConfig` not found | Need `diffusers>=0.36.0` + gguf: `pip install "diffusers>=0.36.0" gguf` |
 | GGUF `from_single_file` fails | Ensure `qwen-image-edit-transformer-config/config.json` exists; check diffusers version |
 | Qwen (nunchaku/GGUF) + FLUX.2 conflict | Use separate venvs (diffusers version incompatible). Nunchaku and GGUF can share the same 0.36.x venv |
+| CUDA OOM with `--ref` | Reference images increase VRAM usage; use `--pre-resize 1m`, reduce `--ref` count, or enable offload |
 
 ## Cache Management
 

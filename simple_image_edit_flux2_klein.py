@@ -180,6 +180,15 @@ def fit_and_align(img, max_w: int, max_h: int, w_mult: int, h_mult: int):
     return img, (w, h)
 
 
+def preprocess_image(path, pre_resize_target, max_w, max_h, w_mult, h_mult, label="image"):
+    img = open_image(Path(path))
+    if pre_resize_target:
+        img, _ = pre_resize_to_total_pixels(img, pre_resize_target)
+    img, (w, h) = fit_and_align(img, max_w, max_h, w_mult, h_mult)
+    eprint(f"[info] {label} final size: {w}x{h}")
+    return img, (w, h)
+
+
 def pick_dtype(torch):
     """Pick best dtype: bf16 if supported, otherwise fp16."""
     bf16_ok = bool(getattr(torch.cuda, "is_bf16_supported", lambda: False)())
@@ -204,7 +213,12 @@ def main():
                     help="ガイダンススケール (default: 1.0)")
     ap.add_argument("--prompt", default=None, help="プロンプト上書き")
     ap.add_argument("--seed", type=int, default=None, help="乱数シード（省略時はランダム）")
+    ap.add_argument("--ref", action="append", default=[], metavar="FILE",
+                    help="参照画像を追加（最大3回指定可能、合計4画像まで）")
     args = ap.parse_args()
+
+    if len(args.ref) > 3:
+        die("エラー: --ref は最大3回まで指定できます（入力画像含め合計4画像）。")
 
     if args.no_offload and args.offload:
         die("エラー: --no-offload と --offload は同時に指定できません。")
@@ -230,13 +244,14 @@ def main():
 
     # Load and preprocess image
     in_path = Path(args.input)
-    img = open_image(in_path)
+    img, (out_w, out_h) = preprocess_image(
+        in_path, args.pre_resize, MAX_W, MAX_H, W_MULT, H_MULT, label="input")
 
-    if args.pre_resize:
-        img, _ = pre_resize_to_total_pixels(img, args.pre_resize)
-
-    img, (out_w, out_h) = fit_and_align(img, MAX_W, MAX_H, W_MULT, H_MULT)
-    eprint(f"[info] final image size: {out_w}x{out_h}")
+    ref_images = []
+    for i, ref_path in enumerate(args.ref):
+        ref_img, _ = preprocess_image(
+            ref_path, args.pre_resize, MAX_W, MAX_H, W_MULT, H_MULT, label=f"ref[{i+1}]")
+        ref_images.append(ref_img)
 
     # Pick dtype (bf16 preferred, fp16 fallback)
     dtype, bf16_ok = pick_dtype(torch)
@@ -282,9 +297,15 @@ def main():
     eprint("[info] starting inference...")
     t1 = time.time()
 
+    if ref_images:
+        image_arg = [img] + ref_images
+        eprint(f"[info] image count: {len(image_arg)}")
+    else:
+        image_arg = img
+
     try:
         output = pipeline(
-            image=img,
+            image=image_arg,
             prompt=prompt,
             height=out_h,
             width=out_w,
@@ -298,6 +319,7 @@ def main():
             "対策:\n"
             "  - --pre-resize 1m を使う\n"
             "  - --offload を使う（sequential CPU offload）\n"
+            "  - --ref の数を減らす\n"
         )
 
     eprint(f"[info] inference done ({time.time()-t1:.1f}s)")
