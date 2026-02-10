@@ -58,6 +58,10 @@ BASE_MODEL_ID = "Qwen/Qwen-Image-Edit-2511"
 
 T2I_DEFAULT_SIZE = (1024, 1024)
 T2I_OUTPUT_NAME = "t2i"
+
+LORA = None             # LoRA重み: HFリポジトリID or ローカルパス (None=無効)
+LORA_WEIGHT_NAME = None # HFリポジトリ内のLoRA重みファイル名 (None=自動)
+LORA_SCALE = 1.0        # LoRA適用強度
 # =======================
 
 
@@ -258,11 +262,11 @@ def main():
     ap.add_argument("--seed", type=int, default=None, help="乱数シード（省略時はランダム）")
     ap.add_argument("--ref", action="append", default=[], metavar="FILE",
                     help="参照画像を追加（最大2回指定可能、合計3画像まで）")
-    ap.add_argument("--lora", default=None, metavar="REPO_OR_PATH",
+    ap.add_argument("--lora", default=LORA, metavar="REPO_OR_PATH",
                     help="LoRA重みのHFリポジトリIDまたはローカルパス")
-    ap.add_argument("--lora-weight-name", default=None, metavar="FILE",
+    ap.add_argument("--lora-weight-name", default=LORA_WEIGHT_NAME, metavar="FILE",
                     help="HFリポジトリ内のLoRA重みファイル名")
-    ap.add_argument("--lora-scale", type=float, default=1.0,
+    ap.add_argument("--lora-scale", type=float, default=LORA_SCALE,
                     help="LoRA適用強度 (default: 1.0)")
     args = ap.parse_args()
 

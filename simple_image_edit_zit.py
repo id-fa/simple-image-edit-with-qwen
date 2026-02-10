@@ -45,6 +45,10 @@ MODEL_OFFICIAL = "Tongyi-MAI/Z-Image-Turbo"
 
 T2I_DEFAULT_SIZE = (1024, 1024)
 T2I_OUTPUT_NAME = "t2i"
+
+LORA = None             # LoRA重み: HFリポジトリID or ローカルパス (None=無効, ZImageでは未対応)
+LORA_WEIGHT_NAME = None # HFリポジトリ内のLoRA重みファイル名 (None=自動)
+LORA_SCALE = 1.0        # LoRA適用強度
 # =======================
 
 
@@ -232,11 +236,11 @@ def main():
     ap.add_argument("--seed", type=int, default=None, help="乱数シード（省略時はランダム）")
     ap.add_argument("--ref", action="append", default=[], metavar="FILE",
                     help="参照画像（ZImageでは未対応、無視されます）")
-    ap.add_argument("--lora", default=None, metavar="REPO_OR_PATH",
+    ap.add_argument("--lora", default=LORA, metavar="REPO_OR_PATH",
                     help="LoRA重み（ZImageでは未対応、無視されます）")
-    ap.add_argument("--lora-weight-name", default=None, metavar="FILE",
+    ap.add_argument("--lora-weight-name", default=LORA_WEIGHT_NAME, metavar="FILE",
                     help="LoRA重みファイル名（ZImageでは未対応、無視されます）")
-    ap.add_argument("--lora-scale", type=float, default=1.0,
+    ap.add_argument("--lora-scale", type=float, default=LORA_SCALE,
                     help="LoRA適用強度（ZImageでは未対応、無視されます）")
     args = ap.parse_args()
 
