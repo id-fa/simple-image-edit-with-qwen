@@ -46,7 +46,7 @@ MODEL_OFFICIAL = "Tongyi-MAI/Z-Image-Turbo"
 T2I_DEFAULT_SIZE = (1024, 1024)
 T2I_OUTPUT_NAME = "t2i"
 
-LORA = None             # LoRA重み: HFリポジトリID or ローカルパス (None=無効, ZImageでは未対応)
+LORA = None             # LoRA重み: HFリポジトリID or ローカルパス (None=無効)
 LORA_WEIGHT_NAME = None # HFリポジトリ内のLoRA重みファイル名 (None=自動)
 LORA_SCALE = 1.0        # LoRA適用強度
 # =======================
@@ -237,11 +237,11 @@ def main():
     ap.add_argument("--ref", action="append", default=[], metavar="FILE",
                     help="参照画像（ZImageでは未対応、無視されます）")
     ap.add_argument("--lora", default=LORA, metavar="REPO_OR_PATH",
-                    help="LoRA重み（ZImageでは未対応、無視されます）")
+                    help="LoRA重みのHFリポジトリIDまたはローカルパス")
     ap.add_argument("--lora-weight-name", default=LORA_WEIGHT_NAME, metavar="FILE",
-                    help="LoRA重みファイル名（ZImageでは未対応、無視されます）")
+                    help="HFリポジトリ内のLoRA重みファイル名")
     ap.add_argument("--lora-scale", type=float, default=LORA_SCALE,
-                    help="LoRA適用強度（ZImageでは未対応、無視されます）")
+                    help="LoRA適用強度 (default: 1.0)")
     args = ap.parse_args()
 
     if args.t2i:
@@ -260,7 +260,7 @@ def main():
     if args.ref:
         eprint("[warn] --ref は ZImageImg2ImgPipeline では未対応のため無視されます。")
     if args.lora:
-        eprint("[warn] --lora は ZImageImg2ImgPipeline では未対応のため無視されます。")
+        eprint(f"[info] LoRA指定あり: {args.lora}")
 
     # bitsandbytes is only needed for unsloth-4bit model
     require_imports(need_bitsandbytes=not args.official)
@@ -339,6 +339,21 @@ def main():
     if args.offload:
         eprint("[info] enable_model_cpu_offload()")
         pipe.enable_model_cpu_offload()
+
+    # LoRA loading (diffusers API)
+    if args.lora:
+        eprint(f"[info] loading LoRA: {args.lora}")
+        try:
+            lora_kwargs = {}
+            if args.lora_weight_name:
+                lora_kwargs["weight_name"] = args.lora_weight_name
+            pipe.load_lora_weights(args.lora, **lora_kwargs)
+            if args.lora_scale != 1.0:
+                pipe.fuse_lora(lora_scale=args.lora_scale)
+                eprint(f"[info] LoRA fused (scale={args.lora_scale})")
+            eprint("[info] LoRA loaded")
+        except Exception as ex:
+            die(f"エラー: LoRAの読み込みに失敗しました。\n  詳細: {ex}")
 
     mem("after pipeline ready", torch)
 

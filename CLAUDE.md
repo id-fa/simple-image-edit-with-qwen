@@ -68,9 +68,9 @@ py .\simple_image_edit_flux2_klein.py --t2i --prompt "A futuristic city" --size 
 - `--progress` - Show Hugging Face download progress
 - `--mem-log` - Display memory usage (requires psutil)
 - `--no-offload` - Disable offloading (requires high VRAM)
-- `--lora REPO_OR_PATH` - LoRA weights (HF repo ID or local path; Nunchaku: nunchaku API, others: diffusers API, Z-Image: ignored)
-- `--lora-weight-name FILE` - Weight file name within HF repo (optional; auto-detected if omitted)
-- `--lora-scale N` - LoRA strength (default: 1.0; Nunchaku: `set_lora_strength()`, others: `fuse_lora()` when != 1.0)
+- `--lora REPO_OR_PATH` - LoRA weights (HF repo ID or local path; Nunchaku: nunchaku API, others: diffusers API). Can also be set via `LORA` constant in source
+- `--lora-weight-name FILE` - Weight file name within HF repo (optional; auto-detected if omitted). Can also be set via `LORA_WEIGHT_NAME` constant
+- `--lora-scale N` - LoRA strength (default: 1.0; Nunchaku: `set_lora_strength()`, others: `fuse_lora()` when != 1.0). Can also be set via `LORA_SCALE` constant
 
 ### Script-specific Options
 - `--offload` (FLUX.2 Klein, Rapid Qwen, GGUF Qwen) - Sequential CPU offload for low VRAM
@@ -172,12 +172,14 @@ Edit constants at top of each script for fixed values:
 - `PROMPT`, `TRUE_CFG_SCALE` (1.0)
 - `NUM_INFERENCE_STEPS` (8), `RANK` (32)
 - `NUM_BLOCKS_ON_GPU` (1), `GPU_MEM_THRESHOLD_GB` (18.0)
+- `LORA` (None), `LORA_WEIGHT_NAME` (None), `LORA_SCALE` (1.0)
 
 **simple_image_edit_rapid_qwen.py**:
 - `PROMPT`, `TRUE_CFG_SCALE` (1.0), `GUIDANCE_SCALE` (1.0), `NEGATIVE_PROMPT` (" ")
 - `NUM_INFERENCE_STEPS` (4)
 - `TRANSFORMER_ID` (`prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23`)
 - `BASE_MODEL_ID` (`Qwen/Qwen-Image-Edit-2511`)
+- `LORA` (None), `LORA_WEIGHT_NAME` (None), `LORA_SCALE` (1.0)
 
 **simple_image_edit_gguf_qwen.py**:
 - `PROMPT`, `TRUE_CFG_SCALE` (1.0), `GUIDANCE_SCALE` (1.0), `NEGATIVE_PROMPT` (" ")
@@ -186,15 +188,18 @@ Edit constants at top of each script for fixed values:
 - `GGUF_FILENAME` (`v23/Qwen-Rapid-NSFW-v23_Q3_K.gguf`)
 - `TRANSFORMER_CONFIG` (`qwen-image-edit-transformer-config`)
 - `BASE_MODEL_ID` (`Qwen/Qwen-Image-Edit-2511`)
+- `LORA` (None), `LORA_WEIGHT_NAME` (None), `LORA_SCALE` (1.0)
 
 **simple_image_edit_flux2_klein.py**:
 - `PROMPT`, `GUIDANCE_SCALE` (1.0)
 - `NUM_INFERENCE_STEPS` (20)
 - `MODEL_ID` (`black-forest-labs/FLUX.2-klein-4B`)
+- `LORA` (None), `LORA_WEIGHT_NAME` (None), `LORA_SCALE` (1.0)
 
 **simple_image_edit_zit.py** (archived):
 - `PROMPT`, `NEGATIVE_PROMPT`
 - `NUM_STEPS` (8), `GUIDANCE_SCALE` (0.0), `STRENGTH` (0.6)
+- `LORA` (None), `LORA_WEIGHT_NAME` (None), `LORA_SCALE` (1.0)
 
 ### Model Paths
 
@@ -225,7 +230,7 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | GGUF `from_single_file` fails | Ensure `qwen-image-edit-transformer-config/config.json` exists; check diffusers version |
 | Qwen (nunchaku/GGUF) + FLUX.2 conflict | Use separate venvs (diffusers version incompatible). Nunchaku and GGUF can share the same 0.36.x venv |
 | CUDA OOM with `--ref` | Reference images increase VRAM usage; use `--pre-resize 1m`, reduce `--ref` count, or enable offload |
-| LoRA load failure | Verify the LoRA is compatible with the target model architecture (Qwen/FLUX.2); check file path or HF repo ID |
+| LoRA load failure | Verify the LoRA is compatible with the target model architecture (Qwen/FLUX.2/Z-Image); check file path or HF repo ID |
 | CUDA OOM with `--lora` | LoRA increases VRAM usage; combine with `--pre-resize 1m` and offload options |
 | Nunchaku LoRA format | Nunchaku uses its own LoRA format via `transformer.update_lora_params()`; standard diffusers LoRA files may not work |
 
