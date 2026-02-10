@@ -61,9 +61,9 @@ py .\simple_image_edit_nunchaku_qwen.py .\sample.png --no-offload
 
 Qwen-Image-Edit-Rapid-AIO-V23 の GGUF 量子化モデルを使った画像編集スクリプトです。nunchaku版よりは導入が容易です。
 
-* モデル: [Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF](https://huggingface.co/Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF)（デフォルト: v23 Q3_K、約10GB）
+* モデル: [Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF](https://huggingface.co/Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF)（デフォルト: v23 NSFW Q3_K、約10GB）
 * ベース: `Qwen/Qwen-Image-Edit-2511`
-* 4ステップ推論
+* 8ステップ推論
 
 ### 実行例
 
