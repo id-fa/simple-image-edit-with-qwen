@@ -23,18 +23,19 @@
 * `--mem-log`：メモリ使用量表示
 * `--ref {file}`：参照画像ファイル指定（枚数はモデルに依存）
 * `--lora {file}` `--lora-scale N`：LoRAファイル指定（メモリが足りないので動作未確認）
+* `--t2i` `--size WxH`：text-to-imageモード
 
 > **Tip:** 常に同じプロンプトを使用する場合は、スクリプト内の `PROMPT = "..."` 行を直接編集してください。
 
 ---
 
-## Qwen-Image-Edit-2509 Lightning (Nunchaku版)
+## Qwen-Image-Edit-2509 Lightning (nunchaku版)
 
 `simple_image_edit_nunchaku_qwen.py`
 
 ### 概要
 
-Nunchaku版Lightningを使って `Qwen/Qwen-Image-Edit-2509` を高速に動かします。
+nunchaku版Lightningを使って `Qwen/Qwen-Image-Edit-2509` を高速に動かします。
 サンプル構成（scheduler / model_path / VRAMに応じた offload 分岐）に沿って実装しています。
 
 * モデル: [nunchaku-ai/nunchaku-qwen-image-edit-2509](https://huggingface.co/nunchaku-ai/nunchaku-qwen-image-edit-2509)（デフォルト: lightning-251115、約12GB）
@@ -58,7 +59,7 @@ py .\simple_image_edit_nunchaku_qwen.py .\sample.png --no-offload
 
 ### 概要
 
-Qwen-Image-Edit-Rapid-AIO-V23 の GGUF 量子化モデルを使った画像編集スクリプトです。Nunchaku版よりは導入が容易です。
+Qwen-Image-Edit-Rapid-AIO-V23 の GGUF 量子化モデルを使った画像編集スクリプトです。nunchaku版よりは導入が容易です。
 
 * モデル: [Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF](https://huggingface.co/Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF)（デフォルト: v23 Q3_K、約10GB）
 * ベース: `Qwen/Qwen-Image-Edit-2511`
@@ -129,13 +130,13 @@ python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
 
 ### 3) diffusers のインストール
 
-Nunchaku版・GGUF版は `diffusers==0.36.x` が必要です。
+nunchaku版・GGUF版は `diffusers==0.36.x` が必要です。
 
 ```powershell
 pip install "diffusers>=0.36.0,<0.37.0"
 ```
 
-**重要:** git nightly版（0.37.0.dev）はAPIが変更されており、Nunchaku版で `pos_embed` `max_txt_seq_len` `txt_seq_lens` 関連のエラーが発生します。
+**重要:** git nightly版（0.37.0.dev）はAPIが変更されており、nunchaku版で `pos_embed` `max_txt_seq_len` `txt_seq_lens` 関連のエラーが発生します。
 
 ### 4) nunchaku のインストール（GGUF版のみ使用する場合は不要）
 
@@ -225,6 +226,12 @@ hf cache rm <リビジョンID>
 * モデル: [prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23](https://huggingface.co/prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23)
 
 遜色なく利用できましたが、時間が掛かりすぎます（1枚30分くらいかかった）。
+
+---
+
+## 関連
+
+ - [Qwen-Image-EditをCLIで使う(Diffusers + nunchaku-qwen-image-edit-2509) - ふぁメモ](https://fa.hatenadiary.jp/entry/20260208/1770527361)
 
 ---
 

@@ -12,7 +12,7 @@ Python scripts for AI-powered image editing using diffusion models:
 4. **simple_image_edit_flux2_klein.py** - FLUX.2 Klein 4B pipeline (requires separate venv with latest diffusers)
 5. **simple_image_edit_zit.py** - Z-Image Turbo (4bit) img2img pipeline (archived; did not meet quality requirements)
 
-All take a single image as input (with optional `--ref` reference images) and output an edited version. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
+All take a single image as input (with optional `--ref` reference images) and output an edited version. All scripts also support `--t2i` mode for text-to-image generation without an input image. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
 **Target Environment:** GeForce RTX 3xxx (VRAM 12GB) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
@@ -26,6 +26,8 @@ py .\simple_image_edit_nunchaku_qwen.py .\sample.png
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png --pre-resize 2m --progress
 py .\simple_image_edit_nunchaku_qwen.py .\sample.png --ref ref2.png --ref ref3.png --prompt "Combine elements"
+py .\simple_image_edit_nunchaku_qwen.py --t2i --prompt "A cat sitting on a windowsill" --seed 42
+py .\simple_image_edit_nunchaku_qwen.py --t2i --prompt "A landscape" --size 1536x1024
 ```
 
 ### Qwen-Image-Edit-Rapid-AIO-V23 — requires recent diffusers
@@ -34,6 +36,7 @@ py .\simple_image_edit_rapid_qwen.py .\sample.png
 py .\simple_image_edit_rapid_qwen.py .\sample.png --prompt "Enhance quality." --seed 42
 py .\simple_image_edit_rapid_qwen.py .\sample.png --pre-resize 2m --offload --progress
 py .\simple_image_edit_rapid_qwen.py .\sample.png --ref ref2.png --prompt "Combine elements"
+py .\simple_image_edit_rapid_qwen.py --t2i --prompt "A landscape painting" --size 1536x1024
 ```
 
 ### Qwen-Image-Edit-Rapid GGUF — requires diffusers 0.36.x + gguf
@@ -43,6 +46,7 @@ py .\simple_image_edit_gguf_qwen.py .\sample.png --prompt "Enhance quality." --s
 py .\simple_image_edit_gguf_qwen.py .\sample.png --pre-resize 2m --offload --progress
 py .\simple_image_edit_gguf_qwen.py .\sample.png --gguf-file v23/Qwen-Rapid-NSFW-v23_Q2_K.gguf
 py .\simple_image_edit_gguf_qwen.py .\sample.png --ref ref2.png --ref ref3.png --pre-resize 1m
+py .\simple_image_edit_gguf_qwen.py --t2i --prompt "A mountain scene" --seed 42
 ```
 
 ### FLUX.2 Klein 4B — requires diffusers latest (git main)
@@ -51,6 +55,7 @@ py .\simple_image_edit_flux2_klein.py .\sample.png
 py .\simple_image_edit_flux2_klein.py .\sample.png --prompt "Enhance quality." --seed 42
 py .\simple_image_edit_flux2_klein.py .\sample.png --pre-resize 1m --offload --progress
 py .\simple_image_edit_flux2_klein.py .\sample.png --ref ref2.png --ref ref3.png --ref ref4.png
+py .\simple_image_edit_flux2_klein.py --t2i --prompt "A futuristic city" --size 1024x768
 ```
 
 ### Common Options
@@ -58,6 +63,8 @@ py .\simple_image_edit_flux2_klein.py .\sample.png --ref ref2.png --ref ref3.png
 - `--seed N` - Random seed for reproducibility (random if omitted)
 - `--pre-resize 1m|2m` - Reduce total pixels while maintaining aspect ratio
 - `--ref FILE` - Add reference image (repeatable; Qwen: max 2, FLUX.2 Klein: max 3, Z-Image: ignored)
+- `--t2i` - Text-to-image mode (no input image required; generates from white blank image). Requires `--prompt`. Incompatible with `--ref` and `--pre-resize`
+- `--size WxH` - Output size for `--t2i` mode (default: 1024x1024, e.g. `--size 1536x1024`)
 - `--progress` - Show Hugging Face download progress
 - `--mem-log` - Display memory usage (requires psutil)
 - `--no-offload` - Disable offloading (requires high VRAM)
@@ -238,3 +245,5 @@ hf cache rm <revision_id>
 - Qwen (GGUF): `{input_stem}_filtered_gguf.png`
 - FLUX.2 Klein: `{input_stem}_filtered_klein.png`
 - Z-Image: `{input_stem}_filtered_zit.png`
+
+In `--t2i` mode, output files use `t2i` as the stem (e.g. `t2i_filtered.png`, `t2i_filtered_rapid.png`, etc.) in the current directory.

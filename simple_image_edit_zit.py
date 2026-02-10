@@ -42,6 +42,9 @@ H_MULT = 16
 
 MODEL_DEFAULT = "unsloth/Z-Image-Turbo-unsloth-bnb-4bit"
 MODEL_OFFICIAL = "Tongyi-MAI/Z-Image-Turbo"
+
+T2I_DEFAULT_SIZE = (1024, 1024)
+T2I_OUTPUT_NAME = "t2i"
 # =======================
 
 
@@ -132,6 +135,20 @@ def parse_pre_resize(s: str | None) -> int | None:
         raise argparse.ArgumentTypeError("pre-resize は '0.3m'/'1m'/'2m'/正の整数/none を指定してください")
 
 
+def parse_size(s: str) -> tuple[int, int]:
+    """Parse 'WxH' size string."""
+    try:
+        parts = s.lower().split("x")
+        if len(parts) != 2:
+            raise ValueError
+        w, h = int(parts[0]), int(parts[1])
+        if w <= 0 or h <= 0:
+            raise ValueError
+        return (w, h)
+    except (ValueError, IndexError):
+        raise argparse.ArgumentTypeError("--size は 'WxH' 形式で指定 (例: 1024x1024)")
+
+
 def open_image(path: Path):
     from PIL import Image
     try:
@@ -197,7 +214,12 @@ def pick_dtype(torch):
 
 def main():
     ap = argparse.ArgumentParser(description="Z-Image Turbo img2img (default: unsloth-4bit)")
-    ap.add_argument("input", help="入力画像ファイル")
+    ap.add_argument("input", nargs="?", default=None,
+                    help="入力画像ファイル（--t2i 時は省略可）")
+    ap.add_argument("--t2i", action="store_true",
+                    help="text-to-imageモード（入力画像不要、白画像から生成）")
+    ap.add_argument("--size", type=parse_size, default=None, metavar="WxH",
+                    help="t2iモード時の出力サイズ (default: 1024x1024)")
     ap.add_argument("--suffix", default=OUT_SUFFIX, help="出力suffix")
     ap.add_argument("--pre-resize", type=parse_pre_resize, default=None, metavar="1m|2m|NUM",
                     help="総ピクセル数を縮小")
@@ -218,6 +240,19 @@ def main():
                     help="LoRA適用強度（ZImageでは未対応、無視されます）")
     args = ap.parse_args()
 
+    if args.t2i:
+        if args.ref:
+            die("エラー: --t2i モードでは --ref は使用できません。")
+        if args.pre_resize:
+            die("エラー: --t2i モードでは --pre-resize は使用できません。")
+        if not args.prompt:
+            die("エラー: --t2i モードでは --prompt の指定が必要です。")
+    else:
+        if args.input is None:
+            die("エラー: 入力画像ファイルを指定してください（text-to-imageモードは --t2i を使用）。")
+        if args.size is not None:
+            die("エラー: --size は --t2i モードでのみ使用できます。")
+
     if args.ref:
         eprint("[warn] --ref は ZImageImg2ImgPipeline では未対応のため無視されます。")
     if args.lora:
@@ -236,14 +271,25 @@ def main():
     mem("start", torch)
 
     # Load and preprocess image
-    in_path = Path(args.input)
-    img = open_image(in_path)
+    if args.t2i:
+        from PIL import Image as _PILImage
+        t2i_w, t2i_h = args.size or T2I_DEFAULT_SIZE
+        t2i_w, t2i_h = round_up(t2i_w, W_MULT), round_up(t2i_h, H_MULT)
+        if t2i_w > MAX_W or t2i_h > MAX_H:
+            die(f"エラー: --size が最大サイズ {MAX_W}x{MAX_H} を超えています。")
+        img = _PILImage.new("RGB", (t2i_w, t2i_h), (255, 255, 255))
+        out_w, out_h = t2i_w, t2i_h
+        in_path = Path(T2I_OUTPUT_NAME)
+        eprint(f"[info] text-to-image mode: {out_w}x{out_h}")
+    else:
+        in_path = Path(args.input)
+        img = open_image(in_path)
 
-    if args.pre_resize:
-        img, _ = pre_resize_to_total_pixels(img, args.pre_resize)
+        if args.pre_resize:
+            img, _ = pre_resize_to_total_pixels(img, args.pre_resize)
 
-    img, (out_w, out_h) = fit_and_align(img, MAX_W, MAX_H, W_MULT, H_MULT)
-    eprint(f"[info] final image size: {out_w}x{out_h}")
+        img, (out_w, out_h) = fit_and_align(img, MAX_W, MAX_H, W_MULT, H_MULT)
+        eprint(f"[info] final image size: {out_w}x{out_h}")
 
     # Pick dtype
     dtype, bf16_ok = pick_dtype(torch)
@@ -299,6 +345,8 @@ def main():
         gen = torch.Generator("cuda").manual_seed(args.seed)
         eprint(f"[info] seed={args.seed}")
 
+    strength = 1.0 if args.t2i else STRENGTH
+
     eprint("[info] starting inference...")
     t1 = time.time()
 
@@ -307,7 +355,7 @@ def main():
             prompt=prompt,
             negative_prompt=NEGATIVE_PROMPT,
             image=img,
-            strength=STRENGTH,
+            strength=strength,
             num_inference_steps=NUM_STEPS,
             guidance_scale=GUIDANCE_SCALE,
             width=out_w,
