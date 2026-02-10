@@ -23,7 +23,7 @@
 * `--mem-log`：メモリ使用量表示
 * `--ref {file}`：参照画像ファイル指定（枚数はモデルに依存）
 * `--lora {file}` `--lora-scale N`：LoRAファイル指定（メモリが足りないので動作未確認）
-* `--t2i` `--size WxH`：text-to-imageモード
+* `--t2i` `--size WxH`：text-to-imageモード（おまけ）
 
 > **Tip:** 常に同じプロンプトを使用する場合は、スクリプト内の `PROMPT = "..."` 行を直接編集してください。
 
