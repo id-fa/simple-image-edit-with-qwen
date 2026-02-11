@@ -33,6 +33,8 @@
 
 `simple_image_edit_nunchaku_qwen.py`
 
+**動作が一番軽いモデル**
+
 ### 概要
 
 nunchaku版Lightningを使って `Qwen/Qwen-Image-Edit-2509` を高速に動かします。
@@ -57,9 +59,13 @@ py .\simple_image_edit_nunchaku_qwen.py .\sample.png --no-offload
 
 `simple_image_edit_gguf_qwen.py`
 
+**ベースモデルが2511で新しく、各種LoRAがマージされていてNSFW対応**
+
 ### 概要
 
-Qwen-Image-Edit-Rapid-AIO-V23 の GGUF 量子化モデルを使った画像編集スクリプトです。nunchaku版よりは導入が容易です。
+Qwen-Image-Edit-Rapid-AIO-V23 の GGUF 量子化モデルを使った画像編集スクリプトです。
+
+nunchaku版よりは導入が容易です。
 
 * モデル: [Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF](https://huggingface.co/Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF)（デフォルト: v23 NSFW Q3_K、約10GB）
 * ベース: `Qwen/Qwen-Image-Edit-2511`
@@ -106,7 +112,7 @@ py -3.11 -m venv .venv
 python -m pip install -U pip
 ```
 
-### 2) CUDA対応 PyTorch のインストール
+### 2) CUDA対応 PyTorch (torch) のインストール
 
 PyTorch は**CUDA対応版**を明示的にインストールする必要があります。`--index-url` を指定しないと CPU 版がインストールされる場合があります。
 
@@ -116,7 +122,7 @@ PyTorch は**CUDA対応版**を明示的にインストールする必要があ�
 pip install -U torch torchvision --index-url https://download.pytorch.org/whl/cu130
 ```
 
-> ※ CUDA 12.8 の場合
+> ※ CUDA 12.8 の場合（クラウドGPU等でドライバが古い環境）
 
 ```powershell
 pip install -U torch torchvision --index-url https://download.pytorch.org/whl/cu128
@@ -168,14 +174,14 @@ pip install -U pillow huggingface_hub psutil transformers accelerate safetensors
 
 ### A) 0%から進まない（特に初回）
 
-* 初回は **モデルのダウンロードとロード**が重く、進捗が止まって見えることがあります。
+* 初回は モデルのダウンロードとロードが重く、進捗が止まって見えることがあります。
 * `--progress` を付けてダウンロード進捗を出す
 * 入力が大きい場合は `--pre-resize 1m` を使う
 
 ### B) shape mismatch（width/height と入力画像latentsが合わない）
 
-* 本スクリプトは **入力画像を 2048 上限に収めた上で、端数はパディングで倍数に合わせる**ため、基本的に起きにくいはずです。
-* もし自前で `width/height` を固定する改造をした場合は、**画像サイズと width/height を一致**させてください。
+* 本スクリプトは 入力画像を 2048 上限に収めた上で、端数はパディングで倍数に合わせるため、基本的に起きにくいはずです。
+* もし自前で `width/height` を固定する改造をした場合は、画像サイズと width/height を一致させてください。
 
 ### C) OOM（CUDA out of memory）
 
@@ -205,7 +211,7 @@ hf cache rm <リビジョンID>
 
 ---
 
-## 備考
+## 備考：その他のモデル用スクリプト
 
 ### Z-Image Turbo (4bit)版 `simple_image_edit_zit.py`
 
