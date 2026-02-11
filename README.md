@@ -55,7 +55,7 @@ py .\simple_image_edit_nunchaku_qwen.py .\sample.png --no-offload
 
 ---
 
-## Qwen-Image-Edit-Rapid GGUF量子化版
+## Qwen-Image-Edit-Rapid-AIO GGUF量子化版
 
 `simple_image_edit_gguf_qwen.py`
 
@@ -287,7 +287,7 @@ python simple_image_edit_nunchaku_qwen.py ./sample.png --no-offload
 
 ---
 
-### Qwen-Image-Edit-Rapid GGUF Quantized
+### Qwen-Image-Edit-Rapid-AIO GGUF Quantized
 
 `simple_image_edit_gguf_qwen.py`
 
