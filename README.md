@@ -246,6 +246,7 @@ cd server
 python app_nunchaku.py
 python app_nunchaku.py --password mysecret --port 8080
 python app_nunchaku.py --lora "path/to/lora.safetensors" --lora-scale 0.8
+python app_nunchaku.py --gallery --password mysecret
 ```
 
 ### server/app_gguf.py — GGUF版Webサーバー
@@ -255,6 +256,7 @@ cd server
 python app_gguf.py
 python app_gguf.py --password mysecret --port 8080
 python app_gguf.py --gguf-local "path/to/model.gguf"
+python app_gguf.py --gallery --password mysecret
 ```
 
 ### 機能
@@ -266,6 +268,10 @@ python app_gguf.py --gguf-local "path/to/model.gguf"
 * 1時間経過したファイルの自動削除
 * Pre-resize: 0.3M / 1M ピクセル
 * t2iモード: 1024x1024固定
+* プロンプト翻訳ボタン（日→英/中、googletrans使用）
+* モデル情報表示（パイプライン、Transformer、Text Encoder等）
+* エラーメッセージ日英併記
+* `--gallery`：画像共有モードを有効にします。生成履歴を一覧表示し、過去の生成画像を入力として再編集できます
 
 ### server/nunchaku_lora_qwen.py — Nunchaku用LoRAローダー
 
@@ -491,6 +497,7 @@ cd server
 python app_nunchaku.py
 python app_nunchaku.py --password mysecret --port 8080
 python app_nunchaku.py --lora "path/to/lora.safetensors" --lora-scale 0.8
+python app_nunchaku.py --gallery --password mysecret
 ```
 
 #### server/app_gguf.py — GGUF Web Server
@@ -500,6 +507,7 @@ cd server
 python app_gguf.py
 python app_gguf.py --password mysecret --port 8080
 python app_gguf.py --gguf-local "path/to/model.gguf"
+python app_gguf.py --gallery --password mysecret
 ```
 
 #### Features
@@ -511,6 +519,10 @@ python app_gguf.py --gguf-local "path/to/model.gguf"
 * Auto-cleanup of files older than 1 hour
 * Pre-resize: 0.3M / 1M pixels
 * t2i mode: 1024x1024 fixed
+* Prompt translation buttons (JP -> EN/ZH via googletrans)
+* Model info display (pipeline, transformer, text encoder, etc.)
+* Bilingual error messages (Japanese/English)
+* `--gallery`: Enables image sharing mode. Browse generation history and reuse past outputs as input for new edits
 
 #### server/nunchaku_lora_qwen.py — Nunchaku LoRA Loader
 

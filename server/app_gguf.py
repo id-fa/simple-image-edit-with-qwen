@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import math
 import os
 import sys
@@ -70,8 +71,10 @@ cancel_requests: set[str] = set()   # job_ids requested to cancel
 
 pipeline_ref = {"pipe": None, "dtype": None}
 pipeline_load_lock = threading.Lock()
+model_info: dict[str, str] = {}
 
 server_password = "password"
+gallery_enabled = False
 
 
 # =======================
@@ -215,6 +218,31 @@ def load_pipeline(progress: bool = False, gguf_local: str | None = None,
 
         pipeline_ref["pipe"] = pipe
         pipeline_ref["dtype"] = dtype
+
+        # Collect model info for UI display
+        model_info["pipeline"] = BASE_MODEL_ID
+        gguf_display = gguf_local if gguf_local else f"{GGUF_REPO}/{GGUF_FILENAME}"
+        model_info["transformer"] = f"GGUF: {gguf_display}"
+        model_info["dtype"] = str(dtype).replace("torch.", "")
+        model_info["steps"] = str(NUM_INFERENCE_STEPS)
+        try:
+            model_info["text_encoder_class"] = pipe.text_encoder.__class__.__name__
+        except Exception:
+            pass
+        try:
+            model_info["tokenizer"] = pipe.tokenizer.__class__.__name__
+        except Exception:
+            pass
+        try:
+            model_info["vae_class"] = pipe.vae.__class__.__name__
+        except Exception:
+            pass
+        if lora:
+            model_info["lora"] = lora
+            if lora_weight_name:
+                model_info["lora_weight_name"] = lora_weight_name
+            model_info["lora_scale"] = str(lora_scale)
+
         print("[info] pipeline ready", file=sys.stderr)
         return pipe
 
@@ -375,11 +403,51 @@ def cleanup_loop():
 
 
 # =======================
+# Gallery helper
+# =======================
+def get_user_hash() -> str:
+    """Generate a short hash from client IP (X-Forwarded-For preferred) + User-Agent."""
+    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    if not ip:
+        ip = request.remote_addr or ""
+    ua = request.headers.get("User-Agent", "")
+    raw = f"{ip}:{ua}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:8]
+
+
+def resolve_gallery_ref(ref_str: str, new_job_id: str, slot: int) -> str | None:
+    """Parse 'job_id:input:0' or 'job_id:result' and copy file to new job's input slot."""
+    import shutil
+    parts = ref_str.split(":")
+    if len(parts) < 2:
+        return None
+    src_job_id, ref_type = parts[0], parts[1]
+    with job_lock:
+        src_job = jobs.get(src_job_id)
+        if not src_job:
+            return None
+        if ref_type == "result":
+            src_path = src_job.get("result_path")
+        elif ref_type == "input" and len(parts) >= 3:
+            idx = int(parts[2])
+            paths = src_job.get("input_paths", [])
+            src_path = paths[idx] if 0 <= idx < len(paths) else None
+        else:
+            return None
+    if not src_path or not os.path.exists(src_path):
+        return None
+    ext = Path(src_path).suffix.lower() or ".png"
+    dest_path = TMP_DIR / f"{new_job_id}_in{slot}{ext}"
+    shutil.copy2(src_path, dest_path)
+    return str(dest_path)
+
+
+# =======================
 # Routes
 # =======================
 @app.route("/")
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(HTML_TEMPLATE, gallery_enabled=gallery_enabled)
 
 
 @app.route("/api/submit", methods=["POST"])
@@ -387,7 +455,7 @@ def submit():
     # Password check
     pw = request.form.get("password", "")
     if pw != server_password:
-        return jsonify({"error": "パスワードが正しくありません"}), 403
+        return jsonify({"error": "パスワードが正しくありません / Invalid password"}), 403
 
     # Queue capacity check
     with job_lock:
@@ -395,7 +463,7 @@ def submit():
         # processing_queue includes the one being processed + waiting
         # max total in queue = 1 (processing) + MAX_QUEUE_WAITING (waiting)
         if waiting_count >= 1 + MAX_QUEUE_WAITING:
-            return jsonify({"error": "サーバーがビジー状態です。しばらく待ってから再試行してください。",
+            return jsonify({"error": "サーバーがビジー状態です / Server is busy. Please try again later.",
                             "busy": True, "queue_size": waiting_count}), 503
 
     t2i = request.form.get("t2i") == "1"
@@ -411,25 +479,38 @@ def submit():
     input_paths = []
 
     if not t2i:
-        files = request.files.getlist("images")
-        if not files or len(files) < 1:
-            return jsonify({"error": "画像ファイルを1つ以上アップロードしてください"}), 400
-        if len(files) > 2:
-            return jsonify({"error": "画像は最大2ファイルまでです"}), 400
+        f1 = request.files.get("image1")
+        f2 = request.files.get("image2")
+        g1 = request.form.get("gallery_image1", "").strip()
+        g2 = request.form.get("gallery_image2", "").strip()
 
-        for i, f in enumerate(files):
-            if not f.filename:
-                continue
-            ext = Path(f.filename).suffix.lower() or ".png"
-            save_path = TMP_DIR / f"{job_id}_in{i}{ext}"
-            f.save(save_path)
-            input_paths.append(str(save_path))
+        if f1 and f1.filename:
+            ext1 = Path(f1.filename).suffix.lower() or ".png"
+            save1 = TMP_DIR / f"{job_id}_in0{ext1}"
+            f1.save(save1)
+            input_paths.append(str(save1))
+        elif g1:
+            resolved = resolve_gallery_ref(g1, job_id, 0)
+            if not resolved:
+                return jsonify({"error": "ギャラリー画像1の参照が無効または期限切れです / Gallery image 1 reference is invalid or expired"}), 400
+            input_paths.append(resolved)
+        else:
+            return jsonify({"error": "Image 1 を選択してください / Please select Image 1"}), 400
 
-        if not input_paths:
-            return jsonify({"error": "有効な画像ファイルがありません"}), 400
+        if f2 and f2.filename:
+            ext2 = Path(f2.filename).suffix.lower() or ".png"
+            save2 = TMP_DIR / f"{job_id}_in1{ext2}"
+            f2.save(save2)
+            input_paths.append(str(save2))
+        elif g2:
+            resolved = resolve_gallery_ref(g2, job_id, 1)
+            if resolved:
+                input_paths.append(resolved)
     else:
         if not prompt or prompt == PROMPT_DEFAULT:
-            return jsonify({"error": "t2iモードではプロンプトの入力が必要です"}), 400
+            return jsonify({"error": "t2iモードではプロンプトの入力が必要です / Prompt is required in t2i mode"}), 400
+
+    user_hash = get_user_hash()
 
     with job_lock:
         jobs[job_id] = {
@@ -444,6 +525,7 @@ def submit():
             "t2i": t2i,
             "current_step": 0,
             "total_steps": NUM_INFERENCE_STEPS,
+            "user_hash": user_hash,
         }
         processing_queue.append(job_id)
         queue_pos = len(processing_queue)
@@ -456,7 +538,7 @@ def status(job_id):
     with job_lock:
         job = jobs.get(job_id)
         if not job:
-            return jsonify({"error": "ジョブが見つかりません"}), 404
+            return jsonify({"error": "ジョブが見つかりません / Job not found"}), 404
 
         # Calculate queue position
         queue_pos = 0
@@ -480,9 +562,9 @@ def cancel(job_id):
     with job_lock:
         job = jobs.get(job_id)
         if not job:
-            return jsonify({"error": "ジョブが見つかりません"}), 404
+            return jsonify({"error": "ジョブが見つかりません / Job not found"}), 404
         if job["status"] in ("done", "error", "cancelled"):
-            return jsonify({"error": "このジョブは既に終了しています"}), 400
+            return jsonify({"error": "このジョブは既に終了しています / This job has already finished"}), 400
 
         cancel_requests.add(job_id)
 
@@ -495,24 +577,96 @@ def cancel(job_id):
             job["status"] = "cancelled"
             cancel_requests.discard(job_id)
 
-    return jsonify({"ok": True, "message": "キャンセルを要求しました"})
+    return jsonify({"ok": True, "message": "キャンセルを要求しました / Cancel requested"})
 
 
 @app.route("/api/result/<job_id>")
 def result(job_id):
+    if gallery_enabled:
+        pw = request.args.get("password", "")
+        if pw != server_password:
+            return jsonify({"error": "Unauthorized"}), 403
     with job_lock:
         job = jobs.get(job_id)
         if not job:
-            return jsonify({"error": "ジョブが見つかりません"}), 404
+            return jsonify({"error": "ジョブが見つかりません / Job not found"}), 404
         if job["status"] != "done":
-            return jsonify({"error": "まだ処理中です"}), 400
+            return jsonify({"error": "まだ処理中です / Still processing"}), 400
         rp = job["result_path"]
 
     if not rp or not os.path.exists(rp):
-        return jsonify({"error": "結果ファイルが見つかりません"}), 404
+        return jsonify({"error": "結果ファイルが見つかりません / Result file not found"}), 404
 
     return send_file(rp, mimetype="image/png", as_attachment=True,
                      download_name=f"result_{job_id}.png")
+
+
+@app.route("/api/translate", methods=["POST"])
+def translate_text():
+    text = request.json.get("text", "").strip()
+    target = request.json.get("target", "en")
+    if not text:
+        return jsonify({"error": "テキストが空です / Text is empty"}), 400
+    try:
+        import asyncio
+        from googletrans import Translator
+        tr = Translator()
+        result = asyncio.run(tr.translate(text, dest=target))
+        return jsonify({"translated": result.text, "src": result.src})
+    except Exception as ex:
+        return jsonify({"error": f"翻訳に失敗しました / Translation failed: {ex}"}), 500
+
+
+@app.route("/api/gallery")
+def gallery():
+    if not gallery_enabled:
+        return jsonify({"error": "Gallery is disabled"}), 404
+    pw = request.args.get("password", "")
+    if pw != server_password:
+        return jsonify({"error": "Unauthorized"}), 403
+    with job_lock:
+        items = []
+        for jid, job in jobs.items():
+            if job["status"] != "done":
+                continue
+            items.append({
+                "job_id": jid,
+                "created": job["created"],
+                "prompt": job.get("prompt", ""),
+                "seed": job.get("seed"),
+                "t2i": job.get("t2i", False),
+                "input_count": len(job.get("input_paths", [])),
+                "user_hash": job.get("user_hash", ""),
+            })
+    items.sort(key=lambda x: x["created"], reverse=True)
+    return jsonify(items)
+
+
+@app.route("/api/input/<job_id>/<int:index>")
+def serve_input(job_id, index):
+    if gallery_enabled:
+        pw = request.args.get("password", "")
+        if pw != server_password:
+            return jsonify({"error": "Unauthorized"}), 403
+    with job_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return jsonify({"error": "Job not found"}), 404
+        paths = job.get("input_paths", [])
+        if index < 0 or index >= len(paths):
+            return jsonify({"error": "Input index out of range"}), 404
+        path = paths[index]
+    if not os.path.exists(path):
+        return jsonify({"error": "File not found"}), 404
+    ext = Path(path).suffix.lower().lstrip(".")
+    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+            "webp": "image/webp", "bmp": "image/bmp"}.get(ext, "image/png")
+    return send_file(path, mimetype=mime)
+
+
+@app.route("/api/model_info")
+def get_model_info():
+    return jsonify(model_info)
 
 
 @app.route("/api/queue_info")
@@ -629,20 +783,101 @@ button.cancel-btn:disabled { background: #4a4a5a; }
   border-radius: 16px; font-size: 0.8rem;
   color: #9ca3af; margin-bottom: 12px;
 }
-.preview-row {
-  display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;
+.model-info {
+  background: #12121a; border: 1px solid #2a2a3a;
+  border-radius: 8px; padding: 12px 16px;
+  margin-bottom: 16px; font-size: 0.8rem;
+  color: #9ca3af; line-height: 1.6;
 }
-.preview-row img {
+.model-info .mi-row { display: flex; gap: 8px; }
+.model-info .mi-label { color: #6b7280; min-width: 110px; flex-shrink: 0; }
+.model-info .mi-val { color: #d1d5db; word-break: break-all; }
+.translate-row {
+  display: flex; gap: 8px; margin-top: 6px;
+}
+.translate-row button {
+  padding: 4px 14px; font-size: 0.8rem;
+  background: #2a2a3a; border: 1px solid #3a3a4a;
+  border-radius: 6px; color: #d1d5db; cursor: pointer;
+  transition: background 0.2s;
+}
+.translate-row button:hover { background: #3a3a4a; }
+.translate-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+.image-slot { margin-top: 12px; }
+.file-row { display: flex; gap: 6px; align-items: center; }
+.file-row input[type="file"] { flex: 1; }
+.file-clear-btn {
+  padding: 2px 8px; font-size: 1rem; line-height: 1;
+  background: #2a2a3a; border: 1px solid #3a3a4a;
+  border-radius: 6px; color: #9ca3af; cursor: pointer;
+  transition: background 0.2s;
+}
+.file-clear-btn:hover { background: #3a3a4a; color: #f87171; }
+.image-slot .preview-thumb {
   max-height: 120px; border-radius: 6px;
-  border: 1px solid #3a3a4a;
+  border: 1px solid #3a3a4a; margin-top: 6px; display: none;
 }
+.gallery-item {
+  background: #12121a; border: 1px solid #2a2a3a;
+  border-radius: 8px; padding: 12px;
+}
+.gallery-meta { font-size: 0.75rem; color: #6b7280; margin-bottom: 4px; }
+.gallery-prompt {
+  font-size: 0.8rem; color: #9ca3af; margin-bottom: 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%; cursor: pointer;
+}
+.gallery-prompt.expanded { white-space: normal; }
+.gallery-images { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.gallery-img-box { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+.gallery-thumb {
+  max-height: 100px; max-width: 140px;
+  border-radius: 6px; border: 1px solid #3a3a4a;
+  cursor: pointer; transition: transform 0.15s;
+}
+.gallery-thumb:hover { transform: scale(1.05); }
+.gallery-radio-row {
+  font-size: 0.7rem; color: #9ca3af;
+  display: flex; gap: 6px; justify-content: center;
+}
+.gallery-radio-row label { display: flex; align-items: center; gap: 2px; cursor: pointer; }
+.gallery-radio-row input[type="radio"] { width: 14px; height: 14px; }
+.gallery-img-label { font-size: 0.65rem; color: #6b7280; }
+#lightbox {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.85); cursor: pointer;
+  align-items: center; justify-content: center;
+}
+#lightbox img { max-width: 95vw; max-height: 95vh; border-radius: 8px; }
+.gallery-dl { font-size: 0.7rem; }
+.gallery-dl a { color: #a78bfa; text-decoration: none; }
+.gallery-dl a:hover { text-decoration: underline; }
+#loginGate {
+  max-width: 360px; margin: 80px auto; text-align: center;
+}
+#loginGate h1 { margin-bottom: 24px; }
+#loginGate .login-error { color: #f87171; font-size: 0.85rem; margin-top: 8px; display: none; }
 </style>
 </head>
 <body>
-<div class="container">
+{% if gallery_enabled %}
+<div id="loginGate" class="container">
+  <h1 style="color:#a78bfa; font-size:1.4rem;">Qwen Image Edit Server (GGUF)</h1>
+  <div class="card">
+    <label for="loginPassword">Password</label>
+    <input type="password" id="loginPassword" placeholder="Enter password">
+    <div class="btn-row" style="justify-content:center;">
+      <button type="button" id="loginBtn">Login</button>
+    </div>
+    <div class="login-error" id="loginError">パスワードが正しくありません / Invalid password</div>
+  </div>
+</div>
+{% endif %}
+<div class="container" id="mainContent" {% if gallery_enabled %}style="display:none"{% endif %}>
   <h1>Qwen Image Edit Server (GGUF)</h1>
 
   <div class="queue-badge" id="queueBadge">Queue: --</div>
+  <div class="model-info" id="modelInfo">Loading model info...</div>
 
   <form id="editForm" class="card" enctype="multipart/form-data">
     <label for="password">Password</label>
@@ -654,13 +889,26 @@ button.cancel-btn:disabled { background: #4a4a5a; }
     </div>
 
     <div id="imageSection">
-      <label for="images">Image (1-2 files)</label>
-      <input type="file" id="images" name="images" accept="image/*" multiple>
-      <div class="preview-row" id="previewRow"></div>
+      <div class="image-slot">
+        <label for="image1">Image 1</label>
+        <div class="file-row"><input type="file" id="image1" name="image1" accept="image/*"><button type="button" class="file-clear-btn" onclick="clearFileInput('image1','preview1')">&#215;</button></div>
+        <img class="preview-thumb" id="preview1">
+        <div id="galleryInd1" style="font-size:0.75rem; color:#a78bfa; margin-top:2px;"></div>
+      </div>
+      <div class="image-slot">
+        <label for="image2">Image 2 / REF (optional)</label>
+        <div class="file-row"><input type="file" id="image2" name="image2" accept="image/*"><button type="button" class="file-clear-btn" onclick="clearFileInput('image2','preview2')">&#215;</button></div>
+        <img class="preview-thumb" id="preview2">
+        <div id="galleryInd2" style="font-size:0.75rem; color:#a78bfa; margin-top:2px;"></div>
+      </div>
     </div>
 
     <label for="prompt">Prompt (blank = default)</label>
     <textarea id="prompt" name="prompt" placeholder="Fix visible seams and misalignment..."></textarea>
+    <div class="translate-row">
+      <button type="button" id="translateEn">&rarr; EN</button>
+      <button type="button" id="translateZh">&rarr; ZH</button>
+    </div>
 
     <label for="pre_resize">Pre-resize</label>
     <select id="pre_resize" name="pre_resize">
@@ -684,9 +932,53 @@ button.cancel-btn:disabled { background: #4a4a5a; }
     </div>
     <div class="result-area" id="resultArea"></div>
   </div>
+
+  {% if gallery_enabled %}
+  <div class="card" id="gallerySection">
+    <h2 style="font-size:1.1rem; color:#a78bfa; margin:0 0 16px 0;">Gallery</h2>
+    <div id="galleryList" style="display:flex; flex-direction:column; gap:16px;">
+      <div style="color:#6b7280; font-size:0.85rem;">No completed jobs yet.</div>
+    </div>
+  </div>
+  <div id="lightbox" onclick="this.style.display='none'">
+    <img id="lightboxImg">
+  </div>
+  {% endif %}
 </div>
 
 <script>
+let sessionPassword = '';
+let selectedSlot1 = null;
+let selectedSlot2 = null;
+
+// Login gate
+(function() {
+  const loginGate = document.getElementById('loginGate');
+  if (!loginGate) return; // gallery not enabled
+  const loginBtn = document.getElementById('loginBtn');
+  const loginPw = document.getElementById('loginPassword');
+  const loginErr = document.getElementById('loginError');
+  function doLogin() {
+    const pw = loginPw.value;
+    fetch('/api/gallery?password=' + encodeURIComponent(pw))
+      .then(r => {
+        if (r.status === 403) { loginErr.style.display = 'block'; return; }
+        sessionPassword = pw;
+        loginGate.style.display = 'none';
+        document.getElementById('mainContent').style.display = 'block';
+        document.getElementById('password').value = pw;
+        initApp();
+      }).catch(() => { loginErr.style.display = 'block'; });
+  }
+  loginBtn.addEventListener('click', doLogin);
+  loginPw.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+})();
+
+// If gallery not enabled, init immediately
+if (!document.getElementById('loginGate')) { initApp(); }
+
+function initApp() {
+
 const form = document.getElementById('editForm');
 const statusBox = document.getElementById('statusBox');
 const statusText = document.getElementById('statusText');
@@ -695,9 +987,12 @@ const submitBtn = document.getElementById('submitBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 const t2iCheck = document.getElementById('t2i');
 const imageSection = document.getElementById('imageSection');
-const imagesInput = document.getElementById('images');
-const previewRow = document.getElementById('previewRow');
+const image1Input = document.getElementById('image1');
+const image2Input = document.getElementById('image2');
+const preview1 = document.getElementById('preview1');
+const preview2 = document.getElementById('preview2');
 const queueBadge = document.getElementById('queueBadge');
+const modelInfoEl = document.getElementById('modelInfo');
 const progressBarContainer = document.getElementById('progressBarContainer');
 const progressBar = document.getElementById('progressBar');
 
@@ -705,21 +1000,69 @@ let pollTimer = null;
 let queueTimer = null;
 let activeJobId = null;
 
+// Model info
+fetch('/api/model_info').then(r => r.json()).then(d => {
+  const rows = [];
+  const labels = {
+    pipeline: 'Pipeline', transformer: 'Transformer',
+    text_encoder_class: 'Text Encoder', tokenizer: 'Tokenizer', vae_class: 'VAE',
+    dtype: 'Dtype', steps: 'Steps',
+    lora: 'LoRA', lora_weight_name: 'LoRA File', lora_scale: 'LoRA Scale'
+  };
+  const order = ['pipeline','transformer','text_encoder_class','tokenizer','vae_class','dtype','steps','lora','lora_weight_name','lora_scale'];
+  for (const k of order) {
+    if (d[k]) rows.push(`<div class="mi-row"><span class="mi-label">${labels[k] || k}</span><span class="mi-val">${d[k]}</span></div>`);
+  }
+  modelInfoEl.innerHTML = rows.join('') || 'No model info';
+}).catch(() => { modelInfoEl.textContent = 'Failed to load model info'; });
+
 // t2i toggle
 t2iCheck.addEventListener('change', () => {
   imageSection.style.display = t2iCheck.checked ? 'none' : 'block';
 });
 
 // image preview
-imagesInput.addEventListener('change', () => {
-  previewRow.innerHTML = '';
-  const files = imagesInput.files;
-  for (let i = 0; i < Math.min(files.length, 2); i++) {
-    const img = document.createElement('img');
-    img.src = URL.createObjectURL(files[i]);
-    previewRow.appendChild(img);
-  }
-});
+function setupPreview(input, preview) {
+  input.addEventListener('change', () => {
+    if (input.files && input.files[0]) {
+      preview.src = URL.createObjectURL(input.files[0]);
+      preview.style.display = 'block';
+    } else {
+      preview.style.display = 'none';
+    }
+  });
+}
+setupPreview(image1Input, preview1);
+setupPreview(image2Input, preview2);
+
+function clearFileInput(inputId, previewId) {
+  const inp = document.getElementById(inputId);
+  const prev = document.getElementById(previewId);
+  if (inp) inp.value = '';
+  if (prev) { prev.src = ''; prev.style.display = 'none'; }
+}
+
+// Translate
+async function doTranslate(target) {
+  const promptEl = document.getElementById('prompt');
+  const text = promptEl.value.trim();
+  if (!text) return;
+  const btns = document.querySelectorAll('.translate-row button');
+  btns.forEach(b => b.disabled = true);
+  try {
+    const res = await fetch('/api/translate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text, target})
+    });
+    const d = await res.json();
+    if (d.error) { alert(d.error); return; }
+    promptEl.value = d.translated;
+  } catch (e) { alert('Translation error: ' + e.message); }
+  finally { btns.forEach(b => b.disabled = false); }
+}
+document.getElementById('translateEn').addEventListener('click', () => doTranslate('en'));
+document.getElementById('translateZh').addEventListener('click', () => doTranslate('zh-cn'));
 
 // queue info polling
 function updateQueueInfo() {
@@ -769,17 +1112,20 @@ form.addEventListener('submit', async (e) => {
   if (t2iCheck.checked) {
     fd.append('t2i', '1');
   } else {
-    const files = imagesInput.files;
-    if (!files || files.length === 0) {
-      alert('Please select image file(s)');
+    const hasFile1 = image1Input.files && image1Input.files[0];
+    const hasFile2 = image2Input.files && image2Input.files[0];
+    if (hasFile1) {
+      fd.append('image1', image1Input.files[0]);
+    } else if (selectedSlot1) {
+      fd.append('gallery_image1', selectedSlot1);
+    } else {
+      alert('Image 1 を選択してください / Please select Image 1 (file or gallery)');
       return;
     }
-    if (files.length > 2) {
-      alert('Max 2 files');
-      return;
-    }
-    for (let i = 0; i < files.length; i++) {
-      fd.append('images', files[i]);
+    if (hasFile2) {
+      fd.append('image2', image2Input.files[0]);
+    } else if (selectedSlot2) {
+      fd.append('gallery_image2', selectedSlot2);
     }
   }
 
@@ -832,10 +1178,11 @@ form.addEventListener('submit', async (e) => {
           statusText.textContent = 'Done!';
           progressBarContainer.classList.add('visible');
           progressBar.style.width = '100%';
+          const rPw = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
           resultArea.innerHTML = `
-            <img src="/api/result/${jobId}" alt="result">
+            <img src="/api/result/${jobId}${rPw}" alt="result">
             <br>
-            <a href="/api/result/${jobId}" download="result_${jobId}.png">Download</a>
+            <a href="/api/result/${jobId}${rPw}" download="result_${jobId}.png">Download</a>
           `;
           resetUI();
         } else if (sd.status === 'cancelled') {
@@ -860,6 +1207,147 @@ form.addEventListener('submit', async (e) => {
     resetUI();
   }
 });
+
+} // end initApp
+
+// === Gallery ===
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function openLightbox(url) {
+  const lb = document.getElementById('lightbox');
+  if (!lb) return;
+  document.getElementById('lightboxImg').src = url;
+  lb.style.display = 'flex';
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const lb = document.getElementById('lightbox');
+    if (lb) lb.style.display = 'none';
+  }
+});
+
+function updateSlotIndicators() {
+  const ind1 = document.getElementById('galleryInd1');
+  const ind2 = document.getElementById('galleryInd2');
+  if (ind1) ind1.textContent = selectedSlot1 ? 'Gallery: ' + selectedSlot1 : '';
+  if (ind2) ind2.textContent = selectedSlot2 ? 'Gallery: ' + selectedSlot2 : '';
+}
+
+function getCheckedAttr(slot, value) {
+  if (slot === 1 && selectedSlot1 === value) return 'checked';
+  if (slot === 2 && selectedSlot2 === value) return 'checked';
+  return '';
+}
+
+function renderGalleryItem(item) {
+  const date = new Date(item.created * 1000);
+  const timeStr = date.toLocaleString();
+  let seedInfo = item.seed !== null && item.seed !== undefined ? ' | seed: ' + item.seed : '';
+  let t2iInfo = item.t2i ? ' | t2i' : '';
+  let userInfo = item.user_hash ? ' | user: ' + item.user_hash : '';
+
+  const pwParam = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
+
+  let inputThumbs = '';
+  if (!item.t2i) {
+    for (let i = 0; i < item.input_count; i++) {
+      const imgUrl = '/api/input/' + item.job_id + '/' + i + pwParam;
+      const refVal = item.job_id + ':input:' + i;
+      inputThumbs += '<div class="gallery-img-box">'
+        + '<div class="gallery-img-label">Input ' + (i+1) + '</div>'
+        + '<img src="' + imgUrl + '" class="gallery-thumb" onclick="openLightbox(\'' + imgUrl + '\')" loading="lazy">'
+        + '<div class="gallery-dl"><a href="' + imgUrl + '" download="input' + i + '_' + item.job_id + '.png">DL</a></div>'
+        + '<div class="gallery-radio-row">'
+        + '<label><input type="radio" name="gallery_slot1" value="' + refVal + '" ' + getCheckedAttr(1, refVal) + '> Img1</label>'
+        + '<label><input type="radio" name="gallery_slot2" value="' + refVal + '" ' + getCheckedAttr(2, refVal) + '> Img2</label>'
+        + '</div></div>';
+    }
+  }
+
+  const resultUrl = '/api/result/' + item.job_id + pwParam;
+  const resultRef = item.job_id + ':result';
+  const resultThumb = '<div class="gallery-img-box">'
+    + '<div class="gallery-img-label">Result</div>'
+    + '<img src="' + resultUrl + '" class="gallery-thumb" onclick="openLightbox(\'' + resultUrl + '\')" loading="lazy">'
+    + '<div class="gallery-dl"><a href="' + resultUrl + '" download="result_' + item.job_id + '.png">DL</a></div>'
+    + '<div class="gallery-radio-row">'
+    + '<label><input type="radio" name="gallery_slot1" value="' + resultRef + '" ' + getCheckedAttr(1, resultRef) + '> Img1</label>'
+    + '<label><input type="radio" name="gallery_slot2" value="' + resultRef + '" ' + getCheckedAttr(2, resultRef) + '> Img2</label>'
+    + '</div></div>';
+
+  return '<div class="gallery-item" data-job-id="' + item.job_id + '">'
+    + '<div class="gallery-meta">' + timeStr + seedInfo + t2iInfo + userInfo + '</div>'
+    + '<div class="gallery-prompt">' + escapeHtml(item.prompt) + '</div>'
+    + '<div class="gallery-images">' + inputThumbs + resultThumb + '</div>'
+    + '</div>';
+}
+
+function saveSelections() {
+  const r1 = document.querySelector('input[name="gallery_slot1"]:checked');
+  const r2 = document.querySelector('input[name="gallery_slot2"]:checked');
+  selectedSlot1 = r1 ? r1.value : null;
+  selectedSlot2 = r2 ? r2.value : null;
+}
+
+function renderGallery(items) {
+  saveSelections();
+  const container = document.getElementById('galleryList');
+  if (!container) return;
+  if (items.length === 0) {
+    container.innerHTML = '<div style="color:#6b7280; font-size:0.85rem;">No completed jobs yet.</div>';
+    updateSlotIndicators();
+    return;
+  }
+  // Validate selections still exist
+  const allRefs = new Set();
+  for (const item of items) {
+    allRefs.add(item.job_id + ':result');
+    for (let i = 0; i < item.input_count; i++) {
+      allRefs.add(item.job_id + ':input:' + i);
+    }
+  }
+  if (selectedSlot1 && !allRefs.has(selectedSlot1)) selectedSlot1 = null;
+  if (selectedSlot2 && !allRefs.has(selectedSlot2)) selectedSlot2 = null;
+
+  container.innerHTML = items.map(renderGalleryItem).join('');
+
+  // Prompt expand
+  container.querySelectorAll('.gallery-prompt').forEach(el => {
+    el.addEventListener('click', () => el.classList.toggle('expanded'));
+  });
+  // Radio state sync + click-to-deselect
+  container.querySelectorAll('input[name="gallery_slot1"]').forEach(r => {
+    r.addEventListener('click', () => {
+      if (selectedSlot1 === r.value) { selectedSlot1 = null; setTimeout(() => { r.checked = false; }, 0); }
+      else { selectedSlot1 = r.value; }
+      updateSlotIndicators();
+    });
+  });
+  container.querySelectorAll('input[name="gallery_slot2"]').forEach(r => {
+    r.addEventListener('click', () => {
+      if (selectedSlot2 === r.value) { selectedSlot2 = null; setTimeout(() => { r.checked = false; }, 0); }
+      else { selectedSlot2 = r.value; }
+      updateSlotIndicators();
+    });
+  });
+  updateSlotIndicators();
+}
+
+function updateGallery() {
+  fetch('/api/gallery?password=' + encodeURIComponent(sessionPassword))
+    .then(r => r.json())
+    .then(items => { if (!items.error) renderGallery(items); })
+    .catch(() => {});
+}
+
+if (document.getElementById('gallerySection')) {
+  setInterval(updateGallery, 5000);
+  updateGallery();
+}
 </script>
 </body>
 </html>
@@ -887,9 +1375,13 @@ def main():
                     help="Weight file name within HF repo (optional)")
     ap.add_argument("--lora-scale", type=float, default=1.0,
                     help="LoRA strength (default: 1.0)")
+    ap.add_argument("--gallery", action="store_true",
+                    help="Enable gallery mode (show generation history)")
     args = ap.parse_args()
 
     server_password = args.password
+    global gallery_enabled
+    gallery_enabled = args.gallery
 
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 

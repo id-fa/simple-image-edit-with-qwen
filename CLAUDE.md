@@ -22,7 +22,7 @@ Python scripts for AI-powered image editing using diffusion models:
 
 All CLI scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All scripts also support `--t2i` mode for text-to-image generation without an input image. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
-Web servers provide browser GUI with password protection, job queue (1 processing + 2 waiting), real-time step progress, and cancel functionality.
+Web servers provide browser GUI with password protection, job queue (1 processing + 2 waiting), real-time step progress, cancel functionality, and optional gallery mode with password-gated login.
 
 **Target Environment:** GeForce RTX 3xxx (VRAM 12GB) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
@@ -104,6 +104,7 @@ python app_nunchaku.py --password mysecret --port 8080
 python app_nunchaku.py --host 0.0.0.0 --progress
 python app_nunchaku.py --no-offload --rank 128
 python app_nunchaku.py --lora "path/to/lora.safetensors" --lora-scale 0.8
+python app_nunchaku.py --gallery --password mysecret
 ```
 
 ### GGUF Web Server
@@ -113,6 +114,7 @@ python app_gguf.py
 python app_gguf.py --password mysecret --port 8080
 python app_gguf.py --gguf-local "path/to/model.gguf"
 python app_gguf.py --lora "HF_REPO_ID" --lora-weight-name "weights.safetensors"
+python app_gguf.py --gallery --password mysecret
 ```
 
 ### Web Server Common Options
@@ -122,6 +124,7 @@ python app_gguf.py --lora "HF_REPO_ID" --lora-weight-name "weights.safetensors"
 - `--progress` - Show HF download progress
 - `--no-offload` - Disable offloading (high VRAM)
 - `--lora`, `--lora-weight-name`, `--lora-scale` - LoRA support (same as CLI)
+- `--gallery` - Enable gallery mode (show generation history with image reuse)
 
 ### Web Server Features
 - Browser GUI with password protection
@@ -131,6 +134,13 @@ python app_gguf.py --lora "HF_REPO_ID" --lora-weight-name "weights.safetensors"
 - Auto-cleanup: files older than 1 hour removed every 5 minutes
 - Pre-resize: 0.3M or 1M pixels
 - t2i mode: 1024x1024 fixed size
+- Prompt translation (googletrans): `-> EN` / `-> ZH` buttons for prompt translation
+- File input clear buttons (x) for resetting image selections
+- Model info display: pipeline, transformer, text encoder class, tokenizer, VAE class, dtype, LoRA
+- Error messages: Japanese/English bilingual (i18n)
+- Gallery mode (`--gallery`): Browse past generation history, click thumbnails to enlarge (lightbox), download links on each image, reuse gallery images as input for new generations via radio button selection (Img1/Img2 slots)
+- Gallery login gate: When `--gallery` is enabled, a password login screen is shown first; all gallery/result/input APIs require password authentication via query parameter
+- User identification: Each gallery entry shows a hashed user ID (SHA-256 of IP + User-Agent, 8 chars) to distinguish generators. Uses `X-Forwarded-For` header when available (reverse proxy support)
 
 ### Web Server-specific Options
 - `--rank N` (Nunchaku only) - Nunchaku rank (32 or 128)
