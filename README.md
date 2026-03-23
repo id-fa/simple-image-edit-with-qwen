@@ -142,7 +142,7 @@ nunchaku版・GGUF版は `diffusers==0.36.x` が必要です。
 pip install "diffusers>=0.36.0,<0.37.0"
 ```
 
-**重要:** git nightly版（0.37.0.dev）はAPIが変更されており、nunchaku版で `pos_embed` `max_txt_seq_len` `txt_seq_lens` 関連のエラーが発生します。
+**重要:** Version 0.37.0 はAPIが変更されており、nunchaku版で `pos_embed` `max_txt_seq_len` `txt_seq_lens` 関連のエラーが発生します。
 
 ### 4) nunchaku のインストール（GGUF版のみ使用する場合は不要）
 
@@ -223,7 +223,7 @@ hf cache rm <リビジョンID>
 
 * モデル: [black-forest-labs/FLUX.2-klein-4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)
 
-遜色なく利用できましたが、diffusers最新版(0.37.0dev以降)を要求するため nunchaku版とは共存できません。venvを分ける必要があります。
+遜色なく利用できましたが、diffusers最新版(0.37.0以降)を要求するため nunchaku版とは共存できません。venvを分ける必要があります。
 
 > `pip install -U git+https://github.com/huggingface/diffusers`
 
@@ -414,7 +414,7 @@ Nunchaku and GGUF versions require `diffusers==0.36.x`.
 pip install -U "diffusers>=0.36.0,<0.37.0"
 ```
 
-**Important:** The git main version (0.37.0.dev) has API changes that cause `pos_embed` / `max_txt_seq_len` / `txt_seq_lens` related errors.
+**Important:** Version 0.37.0 has API changes that cause `pos_embed` / `max_txt_seq_len` / `txt_seq_lens` related errors.
 
 #### 4) Install nunchaku (skip if using GGUF version only)
 
