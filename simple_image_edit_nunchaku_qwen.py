@@ -366,17 +366,20 @@ def main():
         )
     eprint(f"[info] transformer loaded ({time.time()-t0:.1f}s)")
 
-    # LoRA loading (nunchaku API)
+    # LoRA loading (via lora_qwen — ported from ComfyUI-QwenImageLoraLoader)
     if args.lora:
         eprint(f"[info] loading LoRA: {args.lora}")
         lora_path = args.lora
         if args.lora_weight_name:
             from huggingface_hub import hf_hub_download
             lora_path = hf_hub_download(repo_id=args.lora, filename=args.lora_weight_name)
+        elif not os.path.isfile(args.lora):
+            from huggingface_hub import hf_hub_download
+            lora_path = hf_hub_download(repo_id=args.lora, filename="pytorch_lora_weights.safetensors")
         try:
-            transformer.update_lora_params(lora_path)
-            transformer.set_lora_strength(args.lora_scale)
-            eprint(f"[info] LoRA loaded (scale={args.lora_scale})")
+            from server.nunchaku_lora_qwen import apply_lora
+            n_applied = apply_lora(transformer, lora_path, strength=args.lora_scale)
+            eprint(f"[info] LoRA loaded: {n_applied} layers (scale={args.lora_scale})")
         except Exception as ex:
             die(f"エラー: LoRAの読み込みに失敗しました。\n  詳細: {ex}")
 

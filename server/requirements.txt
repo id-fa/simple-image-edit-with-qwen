@@ -1,0 +1,25 @@
+# Common dependencies (both app_gguf.py and app_nunchaku.py)
+flask>=3.0
+pillow
+huggingface_hub
+psutil
+transformers
+accelerate
+safetensors
+torch
+
+# app_gguf.py: GGUF quantized (diffusers>=0.36.0 + gguf)
+# diffusers>=0.36.0
+# gguf
+
+# app_nunchaku.py: Nunchaku Lightning (diffusers==0.36.x + nunchaku)
+# diffusers>=0.36.0,<0.37.0
+# nunchaku (install from .whl)
+
+# NOTE: Choose ONE of the above depending on which server you use.
+# GGUF and Nunchaku can share the same venv (both need diffusers 0.36.x).
+# Install example for GGUF:
+#   pip install "diffusers>=0.36.0" gguf
+# Install example for Nunchaku:
+#   pip install "diffusers>=0.36.0,<0.37.0"
+#   pip install <nunchaku .whl URL>

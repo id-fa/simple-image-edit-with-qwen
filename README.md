@@ -22,7 +22,7 @@
 * `--progress`：ダウンロード進捗表示
 * `--mem-log`：メモリ使用量表示
 * `--ref {file}`：参照画像ファイル指定（枚数はモデルに依存）
-* `--lora {file}` `--lora-scale N`：LoRAファイル指定（メモリが足りないので動作未確認）
+* `--lora {file}` `--lora-scale N`：LoRAファイル指定（nunchaku版は `nunchaku_lora_qwen.py` 経由で標準diffusers形式のLoRAに対応）
 * `--t2i` `--size WxH`：text-to-imageモード（おまけ）
 
 > **Tip:** 常に同じプロンプトを使用する場合は、スクリプト内の `PROMPT = "..."` 行を直接編集してください。
@@ -235,6 +235,50 @@ hf cache rm <リビジョンID>
 
 ---
 
+## Webサーバー版 (`server/`)
+
+CLIスクリプトをFlaskベースのWebサーバーとして提供します。ブラウザからGUIで画像編集が可能です。
+
+### server/app_nunchaku.py — Nunchaku版Webサーバー
+
+```powershell
+cd server
+python app_nunchaku.py
+python app_nunchaku.py --password mysecret --port 8080
+python app_nunchaku.py --lora "path/to/lora.safetensors" --lora-scale 0.8
+```
+
+### server/app_gguf.py — GGUF版Webサーバー
+
+```powershell
+cd server
+python app_gguf.py
+python app_gguf.py --password mysecret --port 8080
+python app_gguf.py --gguf-local "path/to/model.gguf"
+```
+
+### 機能
+
+* パスワード保護
+* ジョブキュー（処理中1 + 待機2まで、3件以上は503 BUSY）
+* リアルタイムステップ進捗表示
+* 処理中ジョブのキャンセル（`pipeline._interrupt`）
+* 1時間経過したファイルの自動削除
+* Pre-resize: 0.3M / 1M ピクセル
+* t2iモード: 1024x1024固定
+
+### server/nunchaku_lora_qwen.py — Nunchaku用LoRAローダー
+
+[ComfyUI-QwenImageLoraLoader](https://github.com/ussoewwin/ComfyUI-QwenImageLoraLoader) から移植したLoRAローダーです。nunchaku量子化モデルに対して標準的なdiffusers形式のLoRA（.safetensors）を適用できます。
+
+* QKV fusion、GLU fusion、proj_out split に対応
+* AWQ modulation layers (img_mod/txt_mod) はスキップ（不安定なため）
+* `app_nunchaku.py` と `simple_image_edit_nunchaku_qwen.py` から使用
+
+> **Note:** GGUF版は `--offload`（sequential CPU offload）に非対応です。GGUFテンソルをmeta deviceに移動できないためです。
+
+---
+
 ## 関連
 
  - [Qwen-Image-EditをCLIで使う(Diffusers + nunchaku-qwen-image-edit-2509) - ふぁメモ](https://fa.hatenadiary.jp/entry/20260208/1770527361)
@@ -436,6 +480,46 @@ Default cache locations:
 
 ---
 
+### Web Servers (`server/`)
+
+Flask-based web servers with browser GUI for image editing.
+
+#### server/app_nunchaku.py — Nunchaku Web Server
+
+```bash
+cd server
+python app_nunchaku.py
+python app_nunchaku.py --password mysecret --port 8080
+python app_nunchaku.py --lora "path/to/lora.safetensors" --lora-scale 0.8
+```
+
+#### server/app_gguf.py — GGUF Web Server
+
+```bash
+cd server
+python app_gguf.py
+python app_gguf.py --password mysecret --port 8080
+python app_gguf.py --gguf-local "path/to/model.gguf"
+```
+
+#### Features
+
+* Password protection
+* Job queue (1 processing + 2 waiting, 3+ returns 503 BUSY)
+* Real-time step progress display
+* Cancel running jobs (`pipeline._interrupt`)
+* Auto-cleanup of files older than 1 hour
+* Pre-resize: 0.3M / 1M pixels
+* t2i mode: 1024x1024 fixed
+
+#### server/nunchaku_lora_qwen.py — Nunchaku LoRA Loader
+
+LoRA loader for NunchakuQwenImageTransformer2DModel, ported from [ComfyUI-QwenImageLoraLoader](https://github.com/ussoewwin/ComfyUI-QwenImageLoraLoader). Enables standard diffusers LoRA (.safetensors) files to be applied to nunchaku quantized models.
+
+> **Note:** GGUF server does NOT support `--offload` (sequential CPU offload incompatible with GGUF tensors).
+
+---
+
 ### Notes
 
 #### Z-Image Turbo (4bit) `simple_image_edit_zit.py`
@@ -466,4 +550,4 @@ Worked well, but too slow (~30 minutes per image).
 
 ---
 
-2026.02 id-fa
+2026.03 id-fa

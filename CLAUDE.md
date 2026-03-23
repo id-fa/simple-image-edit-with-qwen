@@ -6,13 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Python scripts for AI-powered image editing using diffusion models:
 
+### CLI Scripts
 1. **simple_image_edit_nunchaku_qwen.py** - Qwen-Image-Edit-2509 Lightning (Nunchaku-optimized) pipeline **(main)**
 2. **simple_image_edit_rapid_qwen.py** - Qwen-Image-Edit-Rapid-AIO-V23 (4-step accelerated, no nunchaku)
 3. **simple_image_edit_gguf_qwen.py** - Qwen-Image-Edit-Rapid-AIO-V23 GGUF quantized (Q3_K default, low VRAM)
 4. **simple_image_edit_flux2_klein.py** - FLUX.2 Klein 4B pipeline (requires separate venv with latest diffusers)
 5. **simple_image_edit_zit.py** - Z-Image Turbo (4bit) img2img pipeline (archived; did not meet quality requirements)
 
-All take a single image as input (with optional `--ref` reference images) and output an edited version. All scripts also support `--t2i` mode for text-to-image generation without an input image. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
+### Web Server Scripts (`server/`)
+6. **server/app_nunchaku.py** - Flask web server for Nunchaku Qwen-Image-Edit-2509 Lightning
+7. **server/app_gguf.py** - Flask web server for GGUF quantized Qwen-Image-Edit-Rapid-AIO-V23
+
+### Utilities
+8. **server/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
+
+All CLI scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All scripts also support `--t2i` mode for text-to-image generation without an input image. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
+
+Web servers provide browser GUI with password protection, job queue (1 processing + 2 waiting), real-time step progress, and cancel functionality.
 
 **Target Environment:** GeForce RTX 3xxx (VRAM 12GB) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
@@ -68,7 +78,7 @@ py .\simple_image_edit_flux2_klein.py --t2i --prompt "A futuristic city" --size 
 - `--progress` - Show Hugging Face download progress
 - `--mem-log` - Display memory usage (requires psutil)
 - `--no-offload` - Disable offloading (requires high VRAM)
-- `--lora REPO_OR_PATH` - LoRA weights (HF repo ID or local path; Nunchaku: nunchaku API, others: diffusers API). Can also be set via `LORA` constant in source
+- `--lora REPO_OR_PATH` - LoRA weights (HF repo ID or local path; Nunchaku: `nunchaku_lora_qwen.py`, others: diffusers API). Can also be set via `LORA` constant in source
 - `--lora-weight-name FILE` - Weight file name within HF repo (optional; auto-detected if omitted). Can also be set via `LORA_WEIGHT_NAME` constant
 - `--lora-scale N` - LoRA strength (default: 1.0; Nunchaku: `set_lora_strength()`, others: `fuse_lora()` when != 1.0). Can also be set via `LORA_SCALE` constant
 
@@ -83,6 +93,51 @@ py .\simple_image_edit_flux2_klein.py --t2i --prompt "A futuristic city" --size 
 - `--gguf-repo REPO` (GGUF Qwen) - HuggingFace GGUF repo (default: `Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF`)
 - `--gguf-file PATH` (GGUF Qwen) - GGUF file within repo (default: `v23/Qwen-Rapid-NSFW-v23_Q3_K.gguf`)
 - `--gguf-local PATH` (GGUF Qwen) - Use local GGUF file directly
+
+## Running the Web Servers
+
+### Nunchaku Web Server
+```powershell
+cd server
+python app_nunchaku.py
+python app_nunchaku.py --password mysecret --port 8080
+python app_nunchaku.py --host 0.0.0.0 --progress
+python app_nunchaku.py --no-offload --rank 128
+python app_nunchaku.py --lora "path/to/lora.safetensors" --lora-scale 0.8
+```
+
+### GGUF Web Server
+```powershell
+cd server
+python app_gguf.py
+python app_gguf.py --password mysecret --port 8080
+python app_gguf.py --gguf-local "path/to/model.gguf"
+python app_gguf.py --lora "HF_REPO_ID" --lora-weight-name "weights.safetensors"
+```
+
+### Web Server Common Options
+- `--host HOST` - Bind host (default: 127.0.0.1)
+- `--port PORT` - Bind port (default: 5000)
+- `--password PW` - Generation password (default: "password")
+- `--progress` - Show HF download progress
+- `--no-offload` - Disable offloading (high VRAM)
+- `--lora`, `--lora-weight-name`, `--lora-scale` - LoRA support (same as CLI)
+
+### Web Server Features
+- Browser GUI with password protection
+- Job queue: 1 processing + 2 waiting, 3+ returns 503 BUSY
+- Real-time step progress via polling (`callback_on_step_end`)
+- Cancel running jobs (`pipeline._interrupt`)
+- Auto-cleanup: files older than 1 hour removed every 5 minutes
+- Pre-resize: 0.3M or 1M pixels
+- t2i mode: 1024x1024 fixed size
+
+### Web Server-specific Options
+- `--rank N` (Nunchaku only) - Nunchaku rank (32 or 128)
+- `--num-blocks-on-gpu N` (Nunchaku only) - Blocks on GPU in low-VRAM mode
+- `--gguf-local PATH` (GGUF only) - Use local GGUF file directly
+
+**Note:** GGUF server does NOT support `--offload` (sequential CPU offload is incompatible with GGUF tensors). Only default (`enable_model_cpu_offload`) and `--no-offload` are available.
 
 ## Environment Setup
 
@@ -134,6 +189,7 @@ All scripts share this preprocessing flow:
   - High VRAM (>18GB): `enable_model_cpu_offload()`
   - Low VRAM: `transformer.set_offload()` + `enable_sequential_cpu_offload()`
 - Warns if incompatible diffusers version detected
+- LoRA: via `server/nunchaku_lora_qwen.py` (ported from ComfyUI-QwenImageLoraLoader). Handles QKV fusion, GLU fusion, proj_out split for nunchaku quantized modules. Standard diffusers LoRA files work (no nunchaku-specific format needed). Skips AWQ modulation layers (img_mod/txt_mod) as they are too sensitive
 
 **Qwen Rapid-AIO-V23**:
 - 4-step accelerated transformer (from `prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23`)
@@ -232,7 +288,8 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | CUDA OOM with `--ref` | Reference images increase VRAM usage; use `--pre-resize 1m`, reduce `--ref` count, or enable offload |
 | LoRA load failure | Verify the LoRA is compatible with the target model architecture (Qwen/FLUX.2/Z-Image); check file path or HF repo ID |
 | CUDA OOM with `--lora` | LoRA increases VRAM usage; combine with `--pre-resize 1m` and offload options |
-| Nunchaku LoRA format | Nunchaku uses its own LoRA format via `transformer.update_lora_params()`; standard diffusers LoRA files may not work |
+| Nunchaku LoRA format | Uses `nunchaku_lora_qwen.py` (ported from ComfyUI-QwenImageLoraLoader); standard diffusers LoRA .safetensors files work |
+| GGUF + `--offload` error | `enable_sequential_cpu_offload()` is incompatible with GGUF tensors; use default offload or `--no-offload` |
 
 ## Cache Management
 
