@@ -72,6 +72,7 @@ model_info: dict[str, str] = {}
 
 server_password = "password"
 gallery_enabled = False
+prompt_presets: list[dict[str, str]] = []  # [{"label": "...", "prompt": "..."}]
 
 
 # =======================
@@ -468,7 +469,8 @@ def resolve_gallery_ref(ref_str: str, new_job_id: str, slot: int) -> str | None:
 # =======================
 @app.route("/")
 def index():
-    return render_template_string(HTML_TEMPLATE, gallery_enabled=gallery_enabled)
+    return render_template_string(HTML_TEMPLATE, gallery_enabled=gallery_enabled,
+                                     prompt_presets=prompt_presets)
 
 
 @app.route("/api/submit", methods=["POST"])
@@ -835,6 +837,14 @@ button.cancel-btn:disabled { background: #4a4a5a; }
 .model-info .mi-row { display: flex; gap: 8px; }
 .model-info .mi-label { color: #6b7280; min-width: 110px; flex-shrink: 0; }
 .model-info .mi-val { color: #d1d5db; word-break: break-all; }
+.preset-row { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.preset-btn {
+  padding: 3px 10px; font-size: 0.75rem;
+  background: #2a2a3a; border: 1px solid #4a4a5a;
+  border-radius: 4px; color: #c4b5fd; cursor: pointer;
+  transition: background 0.2s;
+}
+.preset-btn:hover { background: #3a3a4a; }
 .translate-row {
   display: flex; gap: 8px; margin-top: 6px;
 }
@@ -952,6 +962,13 @@ button.cancel-btn:disabled { background: #4a4a5a; }
     </div>
 
     <label for="prompt">Prompt (blank = default)</label>
+    {% if prompt_presets %}
+    <div class="preset-row">
+      {% for p in prompt_presets %}
+      <button type="button" class="preset-btn" data-prompt="{{ p.prompt }}">{{ p.label }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
     <textarea id="prompt" name="prompt" placeholder="Fix visible seams and misalignment..."></textarea>
     <div class="translate-row">
       <button type="button" id="translateEn">&rarr; EN</button>
@@ -1129,6 +1146,13 @@ async function doTranslate(target) {
 }
 document.getElementById('translateEn').addEventListener('click', () => doTranslate('en'));
 document.getElementById('translateZh').addEventListener('click', () => doTranslate('zh-cn'));
+
+// Preset buttons
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('prompt').value = btn.getAttribute('data-prompt');
+  });
+});
 
 function updateQueueInfo() {
   fetch('/api/queue_info')
@@ -1472,11 +1496,22 @@ def main():
                     help="LoRA strength (default: 1.0)")
     ap.add_argument("--gallery", action="store_true",
                     help="Enable gallery mode (show generation history)")
+    ap.add_argument("--preset", action="append", default=[], metavar='"label::prompt"',
+                    help="Prompt preset button (repeatable). Format: label::prompt or just prompt")
     args = ap.parse_args()
 
     server_password = args.password
     global gallery_enabled
     gallery_enabled = args.gallery
+
+    # Parse presets
+    global prompt_presets
+    for i, raw in enumerate(args.preset, 1):
+        if "::" in raw:
+            label, prompt_text = raw.split("::", 1)
+        else:
+            label, prompt_text = f"preset{i}", raw
+        prompt_presets.append({"label": label.strip(), "prompt": prompt_text.strip()})
 
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 

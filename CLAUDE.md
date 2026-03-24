@@ -106,6 +106,7 @@ python app_nunchaku.py --no-offload --rank 128
 python app_nunchaku.py --steps 4              # 4-step model
 python app_nunchaku.py --lora "path/to/lora.safetensors" --lora-scale 0.8
 python app_nunchaku.py --gallery --password mysecret
+python app_nunchaku.py --preset "高画質化::Enhance quality." --preset "テキスト除去::Remove all text."
 ```
 
 ### GGUF Web Server
@@ -126,6 +127,7 @@ python app_gguf.py --gallery --password mysecret
 - `--no-offload` - Disable offloading (high VRAM)
 - `--lora`, `--lora-weight-name`, `--lora-scale` - LoRA support (same as CLI)
 - `--gallery` - Enable gallery mode (show generation history with image reuse)
+- `--preset "label::prompt"` - Prompt preset button (repeatable). Omit `label::` for auto-numbered labels (`preset1`, `preset2`, ...)
 
 ### Web Server Features
 - Browser GUI with password protection
@@ -135,6 +137,7 @@ python app_gguf.py --gallery --password mysecret
 - Auto-cleanup: files older than 1 hour removed every 5 minutes
 - Pre-resize: 0.3M or 1M pixels
 - t2i mode: 1024x1024 fixed size
+- Prompt presets (`--preset`): Configurable buttons above prompt textarea. Click to fill prompt with preset text
 - Prompt translation (googletrans): `-> EN` / `-> ZH` buttons for prompt translation
 - File input clear buttons (x) for resetting image selections, drag-and-drop image upload
 - Model info display: pipeline, transformer, text encoder class, tokenizer, VAE class, dtype, LoRA
