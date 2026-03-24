@@ -73,6 +73,7 @@ model_info: dict[str, str] = {}
 server_password = "password"
 gallery_enabled = False
 prompt_presets: list[dict[str, str]] = []  # [{"label": "...", "prompt": "..."}]
+drawings: dict[str, dict] = {}  # drawing_id -> {user_hash, created, path, type, source}
 
 
 # =======================
@@ -414,6 +415,22 @@ def cleanup_loop():
                     except OSError:
                         pass
 
+        # Clean up old drawings
+        draw_remove = []
+        for did, d in drawings.items():
+            if d["created"] < cutoff:
+                draw_remove.append(did)
+        for did in draw_remove:
+            d = drawings.pop(did, None)
+            if d:
+                for key in ("path", "bg_path", "overlay_path"):
+                    p = d.get(key)
+                    if p:
+                        try:
+                            os.remove(p)
+                        except OSError:
+                            pass
+
         for f in TMP_DIR.iterdir():
             if f.name == ".gitkeep":
                 continue
@@ -438,11 +455,25 @@ def get_user_hash() -> str:
 
 
 def resolve_gallery_ref(ref_str: str, new_job_id: str, slot: int) -> str | None:
-    """Parse 'job_id:input:0' or 'job_id:result' and copy file to new job's input slot."""
+    """Parse 'job_id:input:0', 'job_id:result', or 'drawing:id' and copy file to new job's input slot."""
     import shutil
     parts = ref_str.split(":")
     if len(parts) < 2:
         return None
+
+    # Handle drawing references
+    if parts[0] == "drawing":
+        drawing_id = parts[1]
+        d = drawings.get(drawing_id)
+        if not d:
+            return None
+        src_path = d.get("path")
+        if not src_path or not os.path.exists(src_path):
+            return None
+        dest_path = TMP_DIR / f"{new_job_id}_in{slot}.png"
+        shutil.copy2(src_path, dest_path)
+        return str(dest_path)
+
     src_job_id, ref_type = parts[0], parts[1]
     with job_lock:
         src_job = jobs.get(src_job_id)
@@ -724,6 +755,160 @@ def queue_info():
 
 
 # =======================
+# Drawing API
+# =======================
+@app.route("/api/drawing/save", methods=["POST"])
+def save_drawing():
+    if gallery_enabled:
+        pw = request.json.get("password", "")
+        if pw != server_password:
+            return jsonify({"error": "Unauthorized"}), 403
+
+    import base64
+    data = request.json
+    img_data = data.get("image", "")
+    draw_type = data.get("type", "composite")
+    source_info = data.get("source", "")
+
+    if not img_data:
+        return jsonify({"error": "No image data"}), 400
+
+    if "," in img_data:
+        img_data = img_data.split(",", 1)[1]
+
+    drawing_id = uuid.uuid4().hex[:12]
+    path = TMP_DIR / f"draw_{drawing_id}.png"
+
+    with open(path, "wb") as f:
+        f.write(base64.b64decode(img_data))
+
+    # For drafts, also save bg and overlay layers for resume
+    bg_path = None
+    overlay_path = None
+    if draw_type == "draft":
+        bg_data = data.get("bg", "")
+        overlay_data = data.get("overlay", "")
+        if bg_data:
+            if "," in bg_data:
+                bg_data = bg_data.split(",", 1)[1]
+            bg_path = str(TMP_DIR / f"draw_{drawing_id}_bg.png")
+            with open(bg_path, "wb") as f:
+                f.write(base64.b64decode(bg_data))
+        if overlay_data:
+            if "," in overlay_data:
+                overlay_data = overlay_data.split(",", 1)[1]
+            overlay_path = str(TMP_DIR / f"draw_{drawing_id}_ov.png")
+            with open(overlay_path, "wb") as f:
+                f.write(base64.b64decode(overlay_data))
+
+    user_hash = get_user_hash()
+    drawings[drawing_id] = {
+        "user_hash": user_hash,
+        "created": time.time(),
+        "path": str(path),
+        "type": draw_type,
+        "source": source_info,
+        "bg_path": bg_path,
+        "overlay_path": overlay_path,
+    }
+
+    return jsonify({"drawing_id": drawing_id})
+
+
+@app.route("/api/drawing/<drawing_id>")
+def serve_drawing(drawing_id):
+    if gallery_enabled:
+        pw = request.args.get("password", "")
+        if pw != server_password:
+            return jsonify({"error": "Unauthorized"}), 403
+    d = drawings.get(drawing_id)
+    if not d:
+        return jsonify({"error": "Drawing not found"}), 404
+    if d["user_hash"] != get_user_hash():
+        return jsonify({"error": "Unauthorized"}), 403
+    if not os.path.exists(d["path"]):
+        return jsonify({"error": "File not found"}), 404
+    return send_file(d["path"], mimetype="image/png")
+
+
+@app.route("/api/drawing/<drawing_id>/bg")
+def serve_drawing_bg(drawing_id):
+    if gallery_enabled:
+        pw = request.args.get("password", "")
+        if pw != server_password:
+            return jsonify({"error": "Unauthorized"}), 403
+    d = drawings.get(drawing_id)
+    if not d:
+        return jsonify({"error": "Drawing not found"}), 404
+    if d["user_hash"] != get_user_hash():
+        return jsonify({"error": "Unauthorized"}), 403
+    bg = d.get("bg_path")
+    if not bg or not os.path.exists(bg):
+        return jsonify({"error": "BG not found"}), 404
+    return send_file(bg, mimetype="image/png")
+
+
+@app.route("/api/drawing/<drawing_id>/overlay")
+def serve_drawing_overlay(drawing_id):
+    if gallery_enabled:
+        pw = request.args.get("password", "")
+        if pw != server_password:
+            return jsonify({"error": "Unauthorized"}), 403
+    d = drawings.get(drawing_id)
+    if not d:
+        return jsonify({"error": "Drawing not found"}), 404
+    if d["user_hash"] != get_user_hash():
+        return jsonify({"error": "Unauthorized"}), 403
+    ov = d.get("overlay_path")
+    if not ov or not os.path.exists(ov):
+        return jsonify({"error": "Overlay not found"}), 404
+    return send_file(ov, mimetype="image/png")
+
+
+@app.route("/api/drawings")
+def list_drawings():
+    if gallery_enabled:
+        pw = request.args.get("password", "")
+        if pw != server_password:
+            return jsonify({"error": "Unauthorized"}), 403
+    user_hash = get_user_hash()
+    items = []
+    for did, d in drawings.items():
+        if d["user_hash"] != user_hash:
+            continue
+        items.append({
+            "drawing_id": did,
+            "created": d["created"],
+            "type": d["type"],
+            "source": d["source"],
+        })
+    items.sort(key=lambda x: x["created"], reverse=True)
+    return jsonify({"items": items})
+
+
+@app.route("/api/drawing/<drawing_id>", methods=["DELETE"])
+def delete_drawing(drawing_id):
+    if gallery_enabled:
+        pw = request.args.get("password", "")
+        if pw != server_password:
+            return jsonify({"error": "Unauthorized"}), 403
+    d = drawings.get(drawing_id)
+    if not d:
+        return jsonify({"error": "Drawing not found"}), 404
+    if d["user_hash"] != get_user_hash():
+        return jsonify({"error": "Unauthorized"}), 403
+    for key in ("path", "bg_path", "overlay_path"):
+        p = d.get(key)
+        if p:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    del drawings[drawing_id]
+    return jsonify({"ok": True})
+
+
+# =======================
 # HTML Template
 # =======================
 HTML_TEMPLATE = r"""<!DOCTYPE html>
@@ -915,6 +1100,104 @@ button.cancel-btn:disabled { background: #4a4a5a; }
   max-height: 120px; border-radius: 6px;
   border: 1px solid #3a3a4a; margin-top: 6px; display: none;
 }
+/* Drawing Editor */
+#drawingEditor {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.95);
+  flex-direction: column; align-items: center;
+}
+#drawingEditor.visible { display: flex; }
+.de-toolbar {
+  width: 100%; padding: 6px 12px;
+  background: #1a1a24; border-bottom: 1px solid #2a2a3a;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  z-index: 1;
+}
+.de-group { display: flex; gap: 3px; align-items: center; }
+.de-group-label { font-size: 0.7rem; color: #6b7280; margin-right: 2px; white-space: nowrap; }
+.de-sep { width: 1px; height: 24px; background: #3a3a4a; margin: 0 4px; }
+.de-tool-btn {
+  padding: 3px 8px; font-size: 0.75rem;
+  background: #2a2a3a; border: 1px solid #4a4a5a;
+  border-radius: 4px; color: #d1d5db; cursor: pointer;
+  white-space: nowrap;
+}
+.de-tool-btn.active { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.de-tool-btn:hover { background: #3a3a4a; }
+.de-color-swatch {
+  width: 20px; height: 20px; border-radius: 3px;
+  border: 2px solid transparent; cursor: pointer;
+}
+.de-color-swatch.active { border-color: #fff; }
+.de-color-swatch:hover { border-color: #9ca3af; }
+.de-size-btn {
+  padding: 1px 6px; font-size: 0.7rem;
+  background: #2a2a3a; border: 1px solid #4a4a5a;
+  border-radius: 3px; color: #d1d5db; cursor: pointer;
+}
+.de-size-btn.active { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.de-action-btn {
+  padding: 3px 10px; font-size: 0.75rem;
+  background: #2a2a3a; border: 1px solid #4a4a5a;
+  border-radius: 4px; color: #d1d5db; cursor: pointer;
+  white-space: nowrap;
+}
+.de-action-btn:hover { background: #3a3a4a; }
+.de-action-btn.save { background: #065f46; border-color: #10b981; color: #d1fae5; }
+.de-action-btn.save:hover { background: #047857; }
+.de-action-btn.close { background: #7f1d1d; border-color: #ef4444; color: #fecaca; }
+.de-action-btn.close:hover { background: #991b1b; }
+.de-canvas-area {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  overflow: auto; width: 100%;
+}
+.de-canvas-wrap { position: relative; display: inline-block; }
+#bgCanvas {
+  display: block; max-width: 95vw; max-height: calc(100vh - 80px);
+}
+#drawCanvas {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+  cursor: crosshair; touch-action: none;
+}
+/* Drawings section */
+#drawingsSection { display: none; }
+.drawing-card.draft { border-color: #4a4a1a; }
+.drawing-card.draft .drawing-thumb { border-color: #8b8b00; }
+.drawing-draft-label { font-size: 0.6rem; color: #eab308; font-weight: bold; }
+.image-slot .preview-thumb[src] { cursor: pointer; }
+.image-slot .preview-thumb[src]:hover { outline: 2px solid #a78bfa; outline-offset: 2px; }
+.blank-sketch-btn {
+  padding: 3px 10px; font-size: 0.75rem;
+  background: #2a2a3a; border: 1px solid #4a4a5a;
+  border-radius: 4px; color: #c4b5fd; cursor: pointer;
+  margin-top: 8px;
+}
+.blank-sketch-btn:hover { background: #3a3a4a; }
+.drawings-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.drawing-card {
+  background: #12121a; border: 1px solid #2a2a3a;
+  border-radius: 6px; padding: 6px; width: 130px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.drawing-thumb {
+  max-width: 118px; max-height: 118px;
+  border-radius: 4px; border: 1px solid #3a3a4a;
+}
+.drawing-info { font-size: 0.65rem; color: #6b7280; text-align: center; }
+.drawing-actions { display: flex; gap: 4px; }
+.drawing-actions a, .drawing-actions button {
+  font-size: 0.65rem; color: #a78bfa; background: none;
+  border: 1px solid #3a3a4a; border-radius: 3px;
+  padding: 1px 5px; cursor: pointer; text-decoration: none;
+}
+.drawing-actions button:hover, .drawing-actions a:hover { background: #2a2a3a; }
+.drawing-radio-row {
+  font-size: 0.65rem; color: #9ca3af;
+  display: flex; gap: 4px; justify-content: center;
+}
+.drawing-radio-row label { display: flex; align-items: center; gap: 2px; cursor: pointer; }
+.drawing-radio-row input[type="radio"] { width: 12px; height: 12px; }
 </style>
 </head>
 <body>
@@ -959,6 +1242,7 @@ button.cancel-btn:disabled { background: #4a4a5a; }
         <img class="preview-thumb" id="preview2">
         <div id="galleryInd2" style="font-size:0.75rem; color:#a78bfa; margin-top:2px;"></div>
       </div>
+      <button type="button" class="blank-sketch-btn" onclick="openBlankCanvas()">+ Blank Sketch</button>
     </div>
 
     <label for="prompt">Prompt (blank = default)</label>
@@ -998,6 +1282,11 @@ button.cancel-btn:disabled { background: #4a4a5a; }
     <div class="result-area" id="resultArea"></div>
   </div>
 
+  <div class="card" id="drawingsSection">
+    <h2 style="font-size:1.1rem; color:#a78bfa; margin:0 0 12px 0;">Drawings</h2>
+    <div class="drawings-grid" id="drawingsList"></div>
+  </div>
+
   {% if gallery_enabled %}
   <div class="card" id="gallerySection">
     <h2 style="font-size:1.1rem; color:#a78bfa; margin:0 0 16px 0;">Gallery</h2>
@@ -1005,10 +1294,39 @@ button.cancel-btn:disabled { background: #4a4a5a; }
       <div style="color:#6b7280; font-size:0.85rem;">No completed jobs yet.</div>
     </div>
   </div>
-  <div id="lightbox" onclick="this.style.display='none'">
-    <img id="lightboxImg">
-  </div>
   {% endif %}
+
+  <div id="drawingEditor">
+    <div class="de-toolbar">
+      <div class="de-group">
+        <button class="de-tool-btn active" data-tool="pen">Pen</button>
+        <button class="de-tool-btn" data-tool="eraser">Eraser</button>
+        <button class="de-tool-btn" data-tool="overwrite">Cover</button>
+      </div>
+      <div class="de-sep"></div>
+      <div class="de-group" id="deColorGroup">
+        <span class="de-group-label">Color:</span>
+      </div>
+      <div class="de-sep"></div>
+      <div class="de-group" id="deSizeGroup">
+        <span class="de-group-label">Size:</span>
+      </div>
+      <div class="de-sep"></div>
+      <div class="de-group">
+        <button class="de-action-btn" onclick="drawUndo()">Undo</button>
+        <button class="de-action-btn" onclick="pauseDrawing()" style="background:#4a3a1a;border-color:#eab308;color:#fef08a;">Pause</button>
+        <button class="de-action-btn save" onclick="saveDrawingToServer('composite')">Save(+bg)</button>
+        <button class="de-action-btn save" onclick="saveDrawingToServer('overlay')">Save(line)</button>
+        <button class="de-action-btn close" onclick="closeDrawingEditor()">Close</button>
+      </div>
+    </div>
+    <div class="de-canvas-area">
+      <div class="de-canvas-wrap">
+        <canvas id="bgCanvas"></canvas>
+        <canvas id="drawCanvas"></canvas>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1101,6 +1419,12 @@ function setupPreview(input, preview) {
       preview.style.display = 'none';
     }
   });
+  preview.addEventListener('click', () => {
+    if (typeof openDrawingEditor === 'function' && preview.src && preview.style.display !== 'none') {
+      openDrawingEditor(preview.src);
+    }
+  });
+  preview.title = 'Click to open in drawing editor';
 }
 setupPreview(image1Input, preview1);
 setupPreview(image2Input, preview2);
@@ -1263,10 +1587,11 @@ form.addEventListener('submit', async (e) => {
           progressBarContainer.classList.add('visible');
           progressBar.style.width = '100%';
           const rPw = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
+          const rUrl = `/api/result/${jobId}${rPw}`;
           resultArea.innerHTML = `
-            <img src="/api/result/${jobId}${rPw}" alt="result">
+            <img src="${rUrl}" alt="result" style="cursor:pointer;" title="Click to open in drawing editor" onclick="openDrawingEditor('${rUrl}')">
             <br>
-            <a href="/api/result/${jobId}${rPw}" download="result_${jobId}.png">Download</a>
+            <a href="${rUrl}" download="result_${jobId}.png">Download</a>
           `;
           resetUI();
         } else if (sd.status === 'cancelled') {
@@ -1299,18 +1624,378 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
-function openLightbox(url) {
-  const lb = document.getElementById('lightbox');
-  if (!lb) return;
-  document.getElementById('lightboxImg').src = url;
-  lb.style.display = 'flex';
+// === Drawing Editor ===
+const DE_COLORS = ['#000000','#ffffff','#ff0000','#ff8800','#ffff00','#00cc00','#0088ff','#8800ff','#ff00ff','#884400'];
+const DE_SIZES = [1, 2, 4, 8, 14, 24, 64];
+let deCurrentTool = 'pen';
+let deCurrentColor = '#ff0000';
+let deLineWidth = 4;
+let deIsDrawing = false;
+let deHistory = [];
+let deMaxHistory = 30;
+let deSourceUrl = '';
+
+function initDrawingEditor() {
+  const colorGroup = document.getElementById('deColorGroup');
+  const sizeGroup = document.getElementById('deSizeGroup');
+  if (!colorGroup || !sizeGroup) return;
+
+  DE_COLORS.forEach((color, i) => {
+    const sw = document.createElement('div');
+    sw.className = 'de-color-swatch' + (color === deCurrentColor ? ' active' : '');
+    sw.style.background = color;
+    sw.onclick = () => {
+      deCurrentColor = color;
+      colorGroup.querySelectorAll('.de-color-swatch').forEach(s => s.classList.remove('active'));
+      sw.classList.add('active');
+    };
+    colorGroup.appendChild(sw);
+  });
+  const picker = document.createElement('input');
+  picker.type = 'color'; picker.value = deCurrentColor;
+  picker.style.cssText = 'width:20px;height:20px;border:none;padding:0;cursor:pointer;background:none;';
+  picker.oninput = () => {
+    deCurrentColor = picker.value;
+    colorGroup.querySelectorAll('.de-color-swatch').forEach(s => s.classList.remove('active'));
+  };
+  colorGroup.appendChild(picker);
+
+  DE_SIZES.forEach((size, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'de-size-btn' + (size === deLineWidth ? ' active' : '');
+    btn.textContent = size;
+    btn.onclick = () => {
+      deLineWidth = size;
+      sizeGroup.querySelectorAll('.de-size-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+    sizeGroup.appendChild(btn);
+  });
+
+  document.querySelectorAll('.de-tool-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      deCurrentTool = btn.dataset.tool;
+      document.querySelectorAll('.de-tool-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const c = document.getElementById('drawCanvas');
+      if (c) c.style.cursor = deCurrentTool === 'pen' ? 'crosshair' : 'cell';
+    });
+  });
 }
+
+function openLightbox(url) {
+  openDrawingEditor(url);
+}
+
+function openDrawingEditor(imageUrl) {
+  const editor = document.getElementById('drawingEditor');
+  if (!editor) return;
+  const bgCanvas = document.getElementById('bgCanvas');
+  const drawCanvas = document.getElementById('drawCanvas');
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = function() {
+    bgCanvas.width = drawCanvas.width = img.naturalWidth;
+    bgCanvas.height = drawCanvas.height = img.naturalHeight;
+    bgCanvas.getContext('2d').drawImage(img, 0, 0);
+    drawCanvas.getContext('2d').clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    deHistory = [];
+    deSourceUrl = imageUrl;
+    editor.style.display = 'flex';
+    deDrawSaveState();
+  };
+  img.src = imageUrl;
+}
+
+function closeDrawingEditor() {
+  const editor = document.getElementById('drawingEditor');
+  if (editor) editor.style.display = 'none';
+}
+
+async function pauseDrawing() {
+  const bgCanvas = document.getElementById('bgCanvas');
+  const drawCanvas = document.getElementById('drawCanvas');
+  if (!bgCanvas || !drawCanvas) return;
+
+  // Composite thumbnail
+  const tmp = document.createElement('canvas');
+  tmp.width = bgCanvas.width; tmp.height = bgCanvas.height;
+  const tmpCtx = tmp.getContext('2d');
+  tmpCtx.drawImage(bgCanvas, 0, 0);
+  tmpCtx.drawImage(drawCanvas, 0, 0);
+
+  const body = {
+    image: tmp.toDataURL('image/png'),
+    bg: bgCanvas.toDataURL('image/png'),
+    overlay: drawCanvas.toDataURL('image/png'),
+    type: 'draft',
+    source: deSourceUrl
+  };
+  if (sessionPassword) body.password = sessionPassword;
+
+  try {
+    const res = await fetch('/api/drawing/save', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+    closeDrawingEditor();
+    updateDrawings();
+  } catch(e) { alert('Save error: ' + e.message); }
+}
+
+function resumeDrawing(drawingId) {
+  const editor = document.getElementById('drawingEditor');
+  if (!editor) return;
+  const bgCanvas = document.getElementById('bgCanvas');
+  const drawCanvas = document.getElementById('drawCanvas');
+  const pw = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
+
+  const bgImg = new Image();
+  bgImg.crossOrigin = 'anonymous';
+  bgImg.onload = function() {
+    bgCanvas.width = drawCanvas.width = bgImg.naturalWidth;
+    bgCanvas.height = drawCanvas.height = bgImg.naturalHeight;
+    bgCanvas.getContext('2d').drawImage(bgImg, 0, 0);
+
+    const ovImg = new Image();
+    ovImg.crossOrigin = 'anonymous';
+    ovImg.onload = function() {
+      drawCanvas.getContext('2d').clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+      drawCanvas.getContext('2d').drawImage(ovImg, 0, 0);
+      deHistory = [];
+      deSourceUrl = '/api/drawing/' + drawingId + '/bg' + pw;
+      editor.style.display = 'flex';
+      deDrawSaveState();
+    };
+    ovImg.onerror = function() {
+      drawCanvas.getContext('2d').clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+      deHistory = [];
+      deSourceUrl = '/api/drawing/' + drawingId + '/bg' + pw;
+      editor.style.display = 'flex';
+      deDrawSaveState();
+    };
+    ovImg.src = '/api/drawing/' + drawingId + '/overlay' + pw;
+  };
+  bgImg.src = '/api/drawing/' + drawingId + '/bg' + pw;
+}
+
+function openBlankCanvas() {
+  const editor = document.getElementById('drawingEditor');
+  if (!editor) return;
+  const bgCanvas = document.getElementById('bgCanvas');
+  const drawCanvas = document.getElementById('drawCanvas');
+  const w = 1024, h = 1024;
+  bgCanvas.width = drawCanvas.width = w;
+  bgCanvas.height = drawCanvas.height = h;
+  const bgCtx = bgCanvas.getContext('2d');
+  bgCtx.fillStyle = '#ffffff';
+  bgCtx.fillRect(0, 0, w, h);
+  drawCanvas.getContext('2d').clearRect(0, 0, w, h);
+  deHistory = [];
+  deSourceUrl = '';
+  editor.style.display = 'flex';
+  deDrawSaveState();
+}
+
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    const lb = document.getElementById('lightbox');
-    if (lb) lb.style.display = 'none';
-  }
+  if (e.key === 'Escape') closeDrawingEditor();
 });
+
+function deGetCoords(e) {
+  const c = document.getElementById('drawCanvas');
+  if (!c) return {x:0, y:0};
+  const r = c.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (c.width / r.width),
+    y: (e.clientY - r.top) * (c.height / r.height)
+  };
+}
+
+function deDrawSaveState() {
+  const c = document.getElementById('drawCanvas');
+  if (!c) return;
+  const ctx = c.getContext('2d');
+  if (deHistory.length >= deMaxHistory) deHistory.shift();
+  deHistory.push(ctx.getImageData(0, 0, c.width, c.height));
+}
+
+function drawUndo() {
+  if (deHistory.length <= 1) return;
+  deHistory.pop();
+  const c = document.getElementById('drawCanvas');
+  if (!c) return;
+  c.getContext('2d').putImageData(deHistory[deHistory.length - 1], 0, 0);
+}
+
+(function() {
+  document.addEventListener('pointerdown', function(e) {
+    const c = document.getElementById('drawCanvas');
+    if (!c || e.target !== c) return;
+    e.preventDefault();
+    deIsDrawing = true;
+    deDrawSaveState();
+    const ctx = c.getContext('2d');
+    const p = deGetCoords(e);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = deLineWidth;
+    if (deCurrentTool === 'pen') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = deCurrentColor;
+    } else if (deCurrentTool === 'eraser') {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
+    } else if (deCurrentTool === 'overwrite') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = '#ffffff';
+    }
+  });
+
+  document.addEventListener('pointermove', function(e) {
+    if (!deIsDrawing) return;
+    const c = document.getElementById('drawCanvas');
+    if (!c) return;
+    e.preventDefault();
+    const ctx = c.getContext('2d');
+    const p = deGetCoords(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  });
+
+  document.addEventListener('pointerup', function() {
+    deIsDrawing = false;
+  });
+})();
+
+async function saveDrawingToServer(type) {
+  const bgCanvas = document.getElementById('bgCanvas');
+  const drawCanvas = document.getElementById('drawCanvas');
+  if (!bgCanvas || !drawCanvas) return;
+
+  const tmp = document.createElement('canvas');
+  tmp.width = bgCanvas.width;
+  tmp.height = bgCanvas.height;
+  const tmpCtx = tmp.getContext('2d');
+  if (type === 'composite') {
+    tmpCtx.drawImage(bgCanvas, 0, 0);
+    tmpCtx.drawImage(drawCanvas, 0, 0);
+  } else {
+    tmpCtx.fillStyle = '#ffffff';
+    tmpCtx.fillRect(0, 0, tmp.width, tmp.height);
+    tmpCtx.drawImage(drawCanvas, 0, 0);
+  }
+  const dataUrl = tmp.toDataURL('image/png');
+
+  try {
+    const body = { image: dataUrl, type: type, source: deSourceUrl };
+    if (sessionPassword) body.password = sessionPassword;
+    const res = await fetch('/api/drawing/save', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+    updateDrawings();
+  } catch(e) { alert('Save error: ' + e.message); }
+}
+
+function updateDrawings() {
+  const pw = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
+  fetch('/api/drawings' + pw)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) return;
+      renderDrawings(data.items || []);
+    }).catch(() => {});
+}
+
+function renderDrawings(items) {
+  const container = document.getElementById('drawingsList');
+  if (!container) return;
+  const section = document.getElementById('drawingsSection');
+  if (items.length === 0) {
+    if (section) section.style.display = 'none';
+    return;
+  }
+  if (section) section.style.display = 'block';
+
+  const pw = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
+  let html = '';
+  for (const item of items) {
+    const imgUrl = '/api/drawing/' + item.drawing_id + pw;
+    const isDraft = item.type === 'draft';
+    const date = new Date(item.created * 1000);
+    const timeStr = date.toLocaleTimeString();
+
+    if (isDraft) {
+      // Draft: click thumbnail to resume, no Img1/Img2
+      html += '<div class="drawing-card draft">'
+        + '<div class="drawing-draft-label">DRAFT</div>'
+        + '<img class="drawing-thumb" src="' + imgUrl + '" loading="lazy" style="cursor:pointer;" onclick="resumeDrawing(\'' + item.drawing_id + '\')">'
+        + '<div class="drawing-info">' + timeStr + '</div>'
+        + '<div class="drawing-actions">'
+        + '<button onclick="deleteDrawing(\'' + item.drawing_id + '\')">Del</button>'
+        + '</div></div>';
+    } else {
+      const refVal = 'drawing:' + item.drawing_id;
+      const typeLabel = item.type === 'composite' ? '+bg' : 'line';
+      html += '<div class="drawing-card">'
+        + '<img class="drawing-thumb" src="' + imgUrl + '" loading="lazy">'
+        + '<div class="drawing-info">' + typeLabel + ' ' + timeStr + '</div>'
+        + '<div class="drawing-actions">'
+        + '<a href="' + imgUrl + '" download="drawing_' + item.drawing_id + '.png">DL</a>'
+        + '<button onclick="deleteDrawing(\'' + item.drawing_id + '\')">Del</button>'
+        + '</div>'
+        + '<div class="drawing-radio-row">'
+        + '<label><input type="radio" name="gallery_slot1" value="' + refVal + '" ' + getCheckedAttr(1, refVal) + '> Img1</label>'
+        + '<label><input type="radio" name="gallery_slot2" value="' + refVal + '" ' + getCheckedAttr(2, refVal) + '> Img2</label>'
+        + '</div></div>';
+    }
+  }
+  container.innerHTML = html;
+
+  function uncheckT2i() {
+    const t2i = document.getElementById('t2i');
+    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
+  }
+  container.querySelectorAll('input[name="gallery_slot1"]').forEach(r => {
+    r.addEventListener('click', () => {
+      if (selectedSlot1 === r.value) { selectedSlot1 = null; setTimeout(() => { r.checked = false; }, 0); }
+      else { selectedSlot1 = r.value; uncheckT2i(); clearFileForSlot(1); }
+      updateSlotIndicators();
+    });
+  });
+  container.querySelectorAll('input[name="gallery_slot2"]').forEach(r => {
+    r.addEventListener('click', () => {
+      if (selectedSlot2 === r.value) { selectedSlot2 = null; setTimeout(() => { r.checked = false; }, 0); }
+      else { selectedSlot2 = r.value; uncheckT2i(); clearFileForSlot(2); }
+      updateSlotIndicators();
+    });
+  });
+}
+
+function deleteDrawing(drawingId) {
+  if (!confirm('Delete this drawing?')) return;
+  const pw = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
+  fetch('/api/drawing/' + drawingId + pw, {method: 'DELETE'})
+    .then(r => r.json())
+    .then(data => { if (data.ok) updateDrawings(); else alert(data.error || 'Error'); })
+    .catch(() => alert('Error'));
+}
+
+function clearFileForSlot(slot) {
+  if (slot === 1) clearFileInput('image1', 'preview1');
+  if (slot === 2) clearFileInput('image2', 'preview2');
+}
 
 function updateSlotIndicators() {
   const ind1 = document.getElementById('galleryInd1');
@@ -1417,8 +2102,8 @@ function renderGallery(items) {
       allRefs.add(item.job_id + ':input:' + i);
     }
   }
-  if (selectedSlot1 && !allRefs.has(selectedSlot1)) selectedSlot1 = null;
-  if (selectedSlot2 && !allRefs.has(selectedSlot2)) selectedSlot2 = null;
+  if (selectedSlot1 && !selectedSlot1.startsWith('drawing:') && !allRefs.has(selectedSlot1)) selectedSlot1 = null;
+  if (selectedSlot2 && !selectedSlot2.startsWith('drawing:') && !allRefs.has(selectedSlot2)) selectedSlot2 = null;
 
   container.innerHTML = items.map(renderGalleryItem).join('');
 
@@ -1434,14 +2119,14 @@ function renderGallery(items) {
   container.querySelectorAll('input[name="gallery_slot1"]').forEach(r => {
     r.addEventListener('click', () => {
       if (selectedSlot1 === r.value) { selectedSlot1 = null; setTimeout(() => { r.checked = false; }, 0); }
-      else { selectedSlot1 = r.value; uncheckT2i(); }
+      else { selectedSlot1 = r.value; uncheckT2i(); clearFileForSlot(1); }
       updateSlotIndicators();
     });
   });
   container.querySelectorAll('input[name="gallery_slot2"]').forEach(r => {
     r.addEventListener('click', () => {
       if (selectedSlot2 === r.value) { selectedSlot2 = null; setTimeout(() => { r.checked = false; }, 0); }
-      else { selectedSlot2 = r.value; uncheckT2i(); }
+      else { selectedSlot2 = r.value; uncheckT2i(); clearFileForSlot(2); }
       updateSlotIndicators();
     });
   });
@@ -1458,6 +2143,9 @@ function updateGallery() {
     })
     .catch(() => {});
 }
+
+initDrawingEditor();
+updateDrawings();
 
 if (document.getElementById('gallerySection')) {
   setInterval(updateGallery, 30000);

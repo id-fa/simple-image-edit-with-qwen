@@ -156,10 +156,24 @@ python app_aio.py --gallery --password mysecret
 - File input clear buttons (x) for resetting image selections, drag-and-drop image upload
 - Model info display: pipeline, transformer, text encoder class, tokenizer, VAE class, dtype, LoRA
 - Error messages: Japanese/English bilingual (i18n)
-- Gallery mode (`--gallery`): Browse past generation history, click thumbnails to enlarge (lightbox), download links on each image, reuse gallery images as input for new generations via radio button selection (Img1/Img2 slots). Selecting a gallery image automatically disables t2i mode
+- Gallery mode (`--gallery`): Browse past generation history, click thumbnails to enlarge, download links on each image, reuse gallery images as input for new generations via radio button selection (Img1/Img2 slots). Selecting a gallery image automatically disables t2i mode
 - Gallery login gate: When `--gallery` is enabled, a password login screen is shown first; all gallery/result/input APIs require password authentication via query parameter
 - User identification: Each gallery entry shows a hashed user ID (SHA-256 of IP + User-Agent, 8 chars) to distinguish generators. Uses `X-Forwarded-For` header when available (reverse proxy support)
 - Gallery entry deletion: Users can delete their own gallery entries (user_hash match required). Deleted entries remain visible as placeholders showing timestamp, user ID, and bilingual deletion message. Files are not removed (cleaned up by auto-cleanup). `DELETE /api/gallery/<job_id>` sets job status to `"hidden"`
+- Drawing editor: Click any image (gallery thumbnails, upload previews, generated results) to open a full-screen drawing editor with:
+  - Dual-canvas architecture: background layer (original image) + transparent overlay layer (drawings)
+  - Tools: Pen (freehand drawing), Eraser (removes overlay pixels only via `destination-out`), Cover (white paint over original image)
+  - Color palette: 10 preset colors + custom color picker
+  - Line sizes: 1, 2, 4, 8, 14, 24, 64 pixels
+  - Undo history (up to 30 steps)
+  - Save options: composite (bg + overlay merged), line-only (overlay layer only)
+  - Draft/pause: Save both layers as a resumable draft with DRAFT label thumbnail. Drafts cannot be used as Img1/Img2
+  - Saved drawings appear as thumbnails with Img1/Img2 radio buttons and download/delete controls
+  - Private to user (user_hash-based access control)
+  - Works in both gallery and non-gallery modes
+  - Blank sketch button: Start drawing on a 1024x1024 white canvas without any source image
+  - File input auto-clear: Selecting Img1/Img2 via radio buttons clears corresponding file input to avoid ambiguity
+- Drawing API routes: `POST /api/drawing/save`, `GET /api/drawing/<id>`, `GET /api/drawing/<id>/bg`, `GET /api/drawing/<id>/overlay`, `GET /api/drawings`, `DELETE /api/drawing/<id>`
 
 ### Web Server-specific Options
 - `--steps N` (Nunchaku only) - Inference steps: 4 or 8 (default: 8)
