@@ -133,6 +133,7 @@ def preprocess_image(img, pre_resize_target: int | None):
 # Pipeline management
 # =======================
 def load_pipeline(progress: bool = True, gguf_local: str | None = None,
+                  gguf_file: str | None = None,
                   no_offload: bool = False,
                   lora: str | None = None, lora_weight_name: str | None = None,
                   lora_scale: float = 1.0):
@@ -173,8 +174,9 @@ def load_pipeline(progress: bool = True, gguf_local: str | None = None,
             print(f"[info] using local GGUF: {gguf_path}", file=sys.stderr)
         else:
             from huggingface_hub import hf_hub_download
-            print(f"[info] downloading GGUF: {GGUF_REPO} / {GGUF_FILENAME}", file=sys.stderr)
-            gguf_path = hf_hub_download(repo_id=GGUF_REPO, filename=GGUF_FILENAME)
+            gguf_fn = gguf_file or GGUF_FILENAME
+            print(f"[info] downloading GGUF: {GGUF_REPO} / {gguf_fn}", file=sys.stderr)
+            gguf_path = hf_hub_download(repo_id=GGUF_REPO, filename=gguf_fn)
             print(f"[info] GGUF ready: {gguf_path}", file=sys.stderr)
 
         # Load transformer from GGUF
@@ -222,7 +224,7 @@ def load_pipeline(progress: bool = True, gguf_local: str | None = None,
 
         # Collect model info for UI display
         model_info["pipeline"] = BASE_MODEL_ID
-        gguf_display = gguf_local if gguf_local else f"{GGUF_REPO}/{GGUF_FILENAME}"
+        gguf_display = gguf_local if gguf_local else f"{GGUF_REPO}/{gguf_fn}"
         model_info["transformer"] = f"GGUF: {gguf_display}"
         model_info["dtype"] = str(dtype).replace("torch.", "")
         model_info["steps"] = str(NUM_INFERENCE_STEPS)
@@ -1473,6 +1475,8 @@ def main():
     ap.add_argument("--port", type=int, default=5000, help="Bind port (default: 5000)")
     ap.add_argument("--password", default="password", help="Generation password (default: password)")
     ap.add_argument("--no-progress", action="store_true", help="Hide HF download progress")
+    ap.add_argument("--gguf-file", default=None, metavar="PATH",
+                    help="GGUF file within HF repo (default: v23/Qwen-Rapid-NSFW-v23_Q3_K.gguf)")
     ap.add_argument("--gguf-local", default=None, metavar="PATH",
                     help="Use local GGUF file directly instead of downloading")
     ap.add_argument("--no-offload", action="store_true",
@@ -1506,7 +1510,7 @@ def main():
 
     print("[info] loading model...", file=sys.stderr)
     load_pipeline(progress=not args.no_progress, gguf_local=args.gguf_local,
-                  no_offload=args.no_offload,
+                  gguf_file=args.gguf_file, no_offload=args.no_offload,
                   lora=args.lora, lora_weight_name=args.lora_weight_name,
                   lora_scale=args.lora_scale)
 
