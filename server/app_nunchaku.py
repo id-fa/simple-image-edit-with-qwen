@@ -6,7 +6,7 @@ Based on simple_image_edit_nunchaku_qwen.py.
 Usage:
   python app_nunchaku.py
   python app_nunchaku.py --password mysecret --port 8080
-  python app_nunchaku.py --host 0.0.0.0 --progress
+  python app_nunchaku.py --host 0.0.0.0 --no-progress
   python app_nunchaku.py --no-offload       # full GPU (high VRAM)
   python app_nunchaku.py --rank 128         # higher quality
 
@@ -34,7 +34,7 @@ from flask import Flask, request, jsonify, send_file, render_template_string
 # =======================
 PROMPT_DEFAULT = "Fix visible seams and misalignment at image boundaries. Remove all overlaid text, subtitles, and credits. Remove compression artifacts and upscaling noise. Preserve the original composition, character identity, pose, and costume exactly."
 TRUE_CFG_SCALE = 1.0
-NUM_INFERENCE_STEPS = 8
+NUM_INFERENCE_STEPS = 8  # default; overridden by --steps
 
 MAX_W = 2048
 MAX_H = 2048
@@ -147,10 +147,10 @@ def build_scheduler_config():
 # =======================
 # Pipeline management
 # =======================
-def load_pipeline(progress: bool = False, no_offload: bool = False,
+def load_pipeline(progress: bool = True, no_offload: bool = False,
                   rank: int = RANK, num_blocks_on_gpu: int = NUM_BLOCKS_ON_GPU,
                   lora: str | None = None, lora_weight_name: str | None = None,
-                  lora_scale: float = 1.0):
+                  lora_scale: float = 1.0, steps: int = NUM_INFERENCE_STEPS):
     """Load Nunchaku pipeline once (thread-safe).
 
     Offload strategy (same as official nunchaku sample):
@@ -187,7 +187,7 @@ def load_pipeline(progress: bool = False, no_offload: bool = False,
         precision = get_precision()
         model_path = (
             f"nunchaku-tech/nunchaku-qwen-image-edit-2509/lightning-251115/"
-            f"svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{NUM_INFERENCE_STEPS}steps-251115.safetensors"
+            f"svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safetensors"
         )
         print(f"[info] model_path: {model_path}", file=sys.stderr)
 
@@ -245,11 +245,15 @@ def load_pipeline(progress: bool = False, no_offload: bool = False,
         pipeline_ref["pipe"] = pipe
         pipeline_ref["dtype"] = dtype
 
+        # Update global NUM_INFERENCE_STEPS so run_inference() and job dict use it
+        global NUM_INFERENCE_STEPS
+        NUM_INFERENCE_STEPS = steps
+
         # Collect model info for UI display
         model_info["pipeline"] = "Qwen/Qwen-Image-Edit-2509"
         model_info["transformer"] = model_path
         model_info["dtype"] = str(dtype).replace("torch.", "")
-        model_info["steps"] = str(NUM_INFERENCE_STEPS)
+        model_info["steps"] = str(steps)
         model_info["rank"] = str(rank)
         try:
             model_info["text_encoder_class"] = pipe.text_encoder.__class__.__name__
@@ -826,6 +830,7 @@ button.cancel-btn:disabled { background: #4a4a5a; }
   transition: background 0.2s;
 }
 .file-clear-btn:hover { background: #3a3a4a; color: #f87171; }
+.image-slot.dragover { outline: 2px dashed #a78bfa; outline-offset: -2px; border-radius: 8px; background: rgba(167,139,250,0.08); }
 .gallery-item {
   background: #12121a; border: 1px solid #2a2a3a;
   border-radius: 8px; padding: 12px;
@@ -840,7 +845,7 @@ button.cancel-btn:disabled { background: #4a4a5a; }
 .gallery-images { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .gallery-img-box { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
 .gallery-thumb {
-  max-height: 100px; max-width: 140px;
+  max-height: 150px; max-width: 210px;
   border-radius: 6px; border: 1px solid #3a3a4a;
   cursor: pointer; transition: transform 0.15s;
 }
@@ -990,6 +995,13 @@ let selectedSlot2 = null;
 // If gallery not enabled, init immediately
 if (!document.getElementById('loginGate')) { initApp(); }
 
+function clearFileInput(inputId, previewId) {
+  const inp = document.getElementById(inputId);
+  const prev = document.getElementById(previewId);
+  if (inp) inp.value = '';
+  if (prev) { prev.src = ''; prev.style.display = 'none'; }
+}
+
 function initApp() {
 
 const form = document.getElementById('editForm');
@@ -1046,12 +1058,25 @@ function setupPreview(input, preview) {
 setupPreview(image1Input, preview1);
 setupPreview(image2Input, preview2);
 
-function clearFileInput(inputId, previewId) {
-  const inp = document.getElementById(inputId);
-  const prev = document.getElementById(previewId);
-  if (inp) inp.value = '';
-  if (prev) { prev.src = ''; prev.style.display = 'none'; }
+// Drag and drop
+function setupDrop(slotEl, inputEl, previewEl) {
+  slotEl.addEventListener('dragover', e => { e.preventDefault(); slotEl.classList.add('dragover'); });
+  slotEl.addEventListener('dragleave', () => slotEl.classList.remove('dragover'));
+  slotEl.addEventListener('drop', e => {
+    e.preventDefault(); slotEl.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length > 0 && files[0].type.startsWith('image/')) {
+      inputEl.files = files;
+      previewEl.src = URL.createObjectURL(files[0]);
+      previewEl.style.display = 'block';
+    }
+  });
 }
+document.querySelectorAll('.image-slot').forEach(slot => {
+  const inp = slot.querySelector('input[type="file"]');
+  const prev = slot.querySelector('.preview-thumb');
+  if (inp && prev) setupDrop(slot, inp, prev);
+});
 
 // Translate
 async function doTranslate(target) {
@@ -1322,18 +1347,22 @@ function renderGallery(items) {
   container.querySelectorAll('.gallery-prompt').forEach(el => {
     el.addEventListener('click', () => el.classList.toggle('expanded'));
   });
-  // Radio state sync + click-to-deselect
+  // Radio state sync + click-to-deselect + uncheck t2i
+  function uncheckT2i() {
+    const t2i = document.getElementById('t2i');
+    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
+  }
   container.querySelectorAll('input[name="gallery_slot1"]').forEach(r => {
     r.addEventListener('click', () => {
       if (selectedSlot1 === r.value) { selectedSlot1 = null; setTimeout(() => { r.checked = false; }, 0); }
-      else { selectedSlot1 = r.value; }
+      else { selectedSlot1 = r.value; uncheckT2i(); }
       updateSlotIndicators();
     });
   });
   container.querySelectorAll('input[name="gallery_slot2"]').forEach(r => {
     r.addEventListener('click', () => {
       if (selectedSlot2 === r.value) { selectedSlot2 = null; setTimeout(() => { r.checked = false; }, 0); }
-      else { selectedSlot2 = r.value; }
+      else { selectedSlot2 = r.value; uncheckT2i(); }
       updateSlotIndicators();
     });
   });
@@ -1348,7 +1377,7 @@ function updateGallery() {
 }
 
 if (document.getElementById('gallerySection')) {
-  setInterval(updateGallery, 5000);
+  setInterval(updateGallery, 30000);
   updateGallery();
 }
 </script>
@@ -1367,9 +1396,11 @@ def main():
     ap.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
     ap.add_argument("--port", type=int, default=5000, help="Bind port (default: 5000)")
     ap.add_argument("--password", default="password", help="Generation password (default: password)")
-    ap.add_argument("--progress", action="store_true", help="Show HF download progress")
+    ap.add_argument("--no-progress", action="store_true", help="Hide HF download progress")
     ap.add_argument("--no-offload", action="store_true",
                     help="Disable offloading, keep all on GPU (high VRAM)")
+    ap.add_argument("--steps", type=int, default=NUM_INFERENCE_STEPS,
+                    help="Inference steps: 4 or 8 (default: 8)")
     ap.add_argument("--rank", type=int, default=RANK,
                     help="Nunchaku rank: 32 or 128 (default: 32)")
     ap.add_argument("--num-blocks-on-gpu", type=int, default=NUM_BLOCKS_ON_GPU,
@@ -1391,10 +1422,10 @@ def main():
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 
     print("[info] loading model...", file=sys.stderr)
-    load_pipeline(progress=args.progress, no_offload=args.no_offload,
+    load_pipeline(progress=not args.no_progress, no_offload=args.no_offload,
                   rank=args.rank, num_blocks_on_gpu=args.num_blocks_on_gpu,
                   lora=args.lora, lora_weight_name=args.lora_weight_name,
-                  lora_scale=args.lora_scale)
+                  lora_scale=args.lora_scale, steps=args.steps)
 
     # Start worker thread
     worker = threading.Thread(target=worker_loop, daemon=True)

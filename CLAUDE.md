@@ -101,8 +101,9 @@ py .\simple_image_edit_flux2_klein.py --t2i --prompt "A futuristic city" --size 
 cd server
 python app_nunchaku.py
 python app_nunchaku.py --password mysecret --port 8080
-python app_nunchaku.py --host 0.0.0.0 --progress
+python app_nunchaku.py --host 0.0.0.0 --no-progress
 python app_nunchaku.py --no-offload --rank 128
+python app_nunchaku.py --steps 4              # 4-step model
 python app_nunchaku.py --lora "path/to/lora.safetensors" --lora-scale 0.8
 python app_nunchaku.py --gallery --password mysecret
 ```
@@ -121,7 +122,7 @@ python app_gguf.py --gallery --password mysecret
 - `--host HOST` - Bind host (default: 127.0.0.1)
 - `--port PORT` - Bind port (default: 5000)
 - `--password PW` - Generation password (default: "password")
-- `--progress` - Show HF download progress
+- `--no-progress` - Hide HF download progress (shown by default)
 - `--no-offload` - Disable offloading (high VRAM)
 - `--lora`, `--lora-weight-name`, `--lora-scale` - LoRA support (same as CLI)
 - `--gallery` - Enable gallery mode (show generation history with image reuse)
@@ -135,14 +136,15 @@ python app_gguf.py --gallery --password mysecret
 - Pre-resize: 0.3M or 1M pixels
 - t2i mode: 1024x1024 fixed size
 - Prompt translation (googletrans): `-> EN` / `-> ZH` buttons for prompt translation
-- File input clear buttons (x) for resetting image selections
+- File input clear buttons (x) for resetting image selections, drag-and-drop image upload
 - Model info display: pipeline, transformer, text encoder class, tokenizer, VAE class, dtype, LoRA
 - Error messages: Japanese/English bilingual (i18n)
-- Gallery mode (`--gallery`): Browse past generation history, click thumbnails to enlarge (lightbox), download links on each image, reuse gallery images as input for new generations via radio button selection (Img1/Img2 slots)
+- Gallery mode (`--gallery`): Browse past generation history, click thumbnails to enlarge (lightbox), download links on each image, reuse gallery images as input for new generations via radio button selection (Img1/Img2 slots). Selecting a gallery image automatically disables t2i mode
 - Gallery login gate: When `--gallery` is enabled, a password login screen is shown first; all gallery/result/input APIs require password authentication via query parameter
 - User identification: Each gallery entry shows a hashed user ID (SHA-256 of IP + User-Agent, 8 chars) to distinguish generators. Uses `X-Forwarded-For` header when available (reverse proxy support)
 
 ### Web Server-specific Options
+- `--steps N` (Nunchaku only) - Inference steps: 4 or 8 (default: 8)
 - `--rank N` (Nunchaku only) - Nunchaku rank (32 or 128)
 - `--num-blocks-on-gpu N` (Nunchaku only) - Blocks on GPU in low-VRAM mode
 - `--gguf-local PATH` (GGUF only) - Use local GGUF file directly
@@ -288,7 +290,7 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | Issue | Solution |
 |-------|----------|
 | CUDA OOM | Use `--pre-resize 1m`, enable offload |
-| 0% hang on first run | Model downloading; use `--progress` |
+| 0% hang on first run | Model downloading (progress shown by default; CLI scripts use `--progress` to enable) |
 | `pos_embed` error (Qwen) | Install `diffusers>=0.36.0,<0.37.0` |
 | Transformer load error (Qwen) | Check `--steps` (4/8) and `--rank` (32/128) combo |
 | `Flux2KleinPipeline` not found | Need latest diffusers: `pip install -U git+https://github.com/huggingface/diffusers` |

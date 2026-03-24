@@ -6,7 +6,7 @@ Based on simple_image_edit_gguf_qwen.py.
 Usage:
   python app.py
   python app.py --password mysecret --port 8080
-  python app.py --host 0.0.0.0 --progress
+  python app.py --host 0.0.0.0 --no-progress
   python app.py --no-offload       # full GPU (high VRAM)
 
 Note: GGUF quantized models are incompatible with sequential CPU offload.
@@ -131,7 +131,7 @@ def preprocess_image(img, pre_resize_target: int | None):
 # =======================
 # Pipeline management
 # =======================
-def load_pipeline(progress: bool = False, gguf_local: str | None = None,
+def load_pipeline(progress: bool = True, gguf_local: str | None = None,
                   no_offload: bool = False,
                   lora: str | None = None, lora_weight_name: str | None = None,
                   lora_scale: float = 1.0):
@@ -813,6 +813,7 @@ button.cancel-btn:disabled { background: #4a4a5a; }
   transition: background 0.2s;
 }
 .file-clear-btn:hover { background: #3a3a4a; color: #f87171; }
+.image-slot.dragover { outline: 2px dashed #a78bfa; outline-offset: -2px; border-radius: 8px; background: rgba(167,139,250,0.08); }
 .image-slot .preview-thumb {
   max-height: 120px; border-radius: 6px;
   border: 1px solid #3a3a4a; margin-top: 6px; display: none;
@@ -831,7 +832,7 @@ button.cancel-btn:disabled { background: #4a4a5a; }
 .gallery-images { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .gallery-img-box { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
 .gallery-thumb {
-  max-height: 100px; max-width: 140px;
+  max-height: 150px; max-width: 210px;
   border-radius: 6px; border: 1px solid #3a3a4a;
   cursor: pointer; transition: transform 0.15s;
 }
@@ -977,6 +978,13 @@ let selectedSlot2 = null;
 // If gallery not enabled, init immediately
 if (!document.getElementById('loginGate')) { initApp(); }
 
+function clearFileInput(inputId, previewId) {
+  const inp = document.getElementById(inputId);
+  const prev = document.getElementById(previewId);
+  if (inp) inp.value = '';
+  if (prev) { prev.src = ''; prev.style.display = 'none'; }
+}
+
 function initApp() {
 
 const form = document.getElementById('editForm');
@@ -1035,12 +1043,25 @@ function setupPreview(input, preview) {
 setupPreview(image1Input, preview1);
 setupPreview(image2Input, preview2);
 
-function clearFileInput(inputId, previewId) {
-  const inp = document.getElementById(inputId);
-  const prev = document.getElementById(previewId);
-  if (inp) inp.value = '';
-  if (prev) { prev.src = ''; prev.style.display = 'none'; }
+// Drag and drop
+function setupDrop(slotEl, inputEl, previewEl) {
+  slotEl.addEventListener('dragover', e => { e.preventDefault(); slotEl.classList.add('dragover'); });
+  slotEl.addEventListener('dragleave', () => slotEl.classList.remove('dragover'));
+  slotEl.addEventListener('drop', e => {
+    e.preventDefault(); slotEl.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length > 0 && files[0].type.startsWith('image/')) {
+      inputEl.files = files;
+      previewEl.src = URL.createObjectURL(files[0]);
+      previewEl.style.display = 'block';
+    }
+  });
 }
+document.querySelectorAll('.image-slot').forEach(slot => {
+  const inp = slot.querySelector('input[type="file"]');
+  const prev = slot.querySelector('.preview-thumb');
+  if (inp && prev) setupDrop(slot, inp, prev);
+});
 
 // Translate
 async function doTranslate(target) {
@@ -1319,18 +1340,22 @@ function renderGallery(items) {
   container.querySelectorAll('.gallery-prompt').forEach(el => {
     el.addEventListener('click', () => el.classList.toggle('expanded'));
   });
-  // Radio state sync + click-to-deselect
+  // Radio state sync + click-to-deselect + uncheck t2i
+  function uncheckT2i() {
+    const t2i = document.getElementById('t2i');
+    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
+  }
   container.querySelectorAll('input[name="gallery_slot1"]').forEach(r => {
     r.addEventListener('click', () => {
       if (selectedSlot1 === r.value) { selectedSlot1 = null; setTimeout(() => { r.checked = false; }, 0); }
-      else { selectedSlot1 = r.value; }
+      else { selectedSlot1 = r.value; uncheckT2i(); }
       updateSlotIndicators();
     });
   });
   container.querySelectorAll('input[name="gallery_slot2"]').forEach(r => {
     r.addEventListener('click', () => {
       if (selectedSlot2 === r.value) { selectedSlot2 = null; setTimeout(() => { r.checked = false; }, 0); }
-      else { selectedSlot2 = r.value; }
+      else { selectedSlot2 = r.value; uncheckT2i(); }
       updateSlotIndicators();
     });
   });
@@ -1345,7 +1370,7 @@ function updateGallery() {
 }
 
 if (document.getElementById('gallerySection')) {
-  setInterval(updateGallery, 5000);
+  setInterval(updateGallery, 30000);
   updateGallery();
 }
 </script>
@@ -1364,7 +1389,7 @@ def main():
     ap.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
     ap.add_argument("--port", type=int, default=5000, help="Bind port (default: 5000)")
     ap.add_argument("--password", default="password", help="Generation password (default: password)")
-    ap.add_argument("--progress", action="store_true", help="Show HF download progress")
+    ap.add_argument("--no-progress", action="store_true", help="Hide HF download progress")
     ap.add_argument("--gguf-local", default=None, metavar="PATH",
                     help="Use local GGUF file directly instead of downloading")
     ap.add_argument("--no-offload", action="store_true",
@@ -1386,7 +1411,7 @@ def main():
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 
     print("[info] loading model...", file=sys.stderr)
-    load_pipeline(progress=args.progress, gguf_local=args.gguf_local,
+    load_pipeline(progress=not args.no_progress, gguf_local=args.gguf_local,
                   no_offload=args.no_offload,
                   lora=args.lora, lora_weight_name=args.lora_weight_name,
                   lora_scale=args.lora_scale)
