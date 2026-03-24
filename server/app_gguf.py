@@ -627,19 +627,45 @@ def gallery():
     with job_lock:
         items = []
         for jid, job in jobs.items():
-            if job["status"] != "done":
-                continue
-            items.append({
-                "job_id": jid,
-                "created": job["created"],
-                "prompt": job.get("prompt", ""),
-                "seed": job.get("seed"),
-                "t2i": job.get("t2i", False),
-                "input_count": len(job.get("input_paths", [])),
-                "user_hash": job.get("user_hash", ""),
-            })
+            if job["status"] == "done":
+                items.append({
+                    "job_id": jid,
+                    "created": job["created"],
+                    "prompt": job.get("prompt", ""),
+                    "seed": job.get("seed"),
+                    "t2i": job.get("t2i", False),
+                    "input_count": len(job.get("input_paths", [])),
+                    "user_hash": job.get("user_hash", ""),
+                    "deleted": False,
+                })
+            elif job["status"] == "hidden":
+                items.append({
+                    "job_id": jid,
+                    "created": job["created"],
+                    "user_hash": job.get("user_hash", ""),
+                    "deleted": True,
+                })
     items.sort(key=lambda x: x["created"], reverse=True)
-    return jsonify(items)
+    caller_hash = get_user_hash()
+    return jsonify({"items": items, "caller_hash": caller_hash})
+
+
+@app.route("/api/gallery/<job_id>", methods=["DELETE"])
+def gallery_delete(job_id):
+    if not gallery_enabled:
+        return jsonify({"error": "Gallery is disabled"}), 404
+    pw = request.args.get("password", "")
+    if pw != server_password:
+        return jsonify({"error": "Unauthorized"}), 403
+    caller_hash = get_user_hash()
+    with job_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return jsonify({"error": "ジョブが見つかりません / Job not found"}), 404
+        if job.get("user_hash", "") != caller_hash:
+            return jsonify({"error": "他のユーザーの履歴は削除できません / Cannot delete another user's entry"}), 403
+        job["status"] = "hidden"
+    return jsonify({"ok": True})
 
 
 @app.route("/api/input/<job_id>/<int:index>")
@@ -822,7 +848,11 @@ button.cancel-btn:disabled { background: #4a4a5a; }
   background: #12121a; border: 1px solid #2a2a3a;
   border-radius: 8px; padding: 12px;
 }
-.gallery-meta { font-size: 0.75rem; color: #6b7280; margin-bottom: 4px; }
+.gallery-meta { font-size: 0.75rem; color: #6b7280; margin-bottom: 4px; display: flex; align-items: center; flex-wrap: wrap; }
+.gallery-delete-btn { background: none; border: 1px solid #ef4444; color: #ef4444; cursor: pointer; font-size: 0.85rem; line-height: 1; padding: 1px 5px; margin-left: 8px; border-radius: 3px; }
+.gallery-delete-btn:hover { background: #ef4444; color: #fff; }
+.gallery-deleted { opacity: 0.5; }
+.gallery-deleted-msg { font-size: 0.8rem; color: #9ca3af; font-style: italic; margin-top: 4px; }
 .gallery-prompt {
   font-size: 0.8rem; color: #9ca3af; margin-bottom: 8px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1264,9 +1294,28 @@ function getCheckedAttr(slot, value) {
   return '';
 }
 
+let myUserHash = '';
+
+function deleteGalleryItem(jobId) {
+  if (!confirm('この履歴を削除しますか？ / Delete this entry?')) return;
+  fetch('/api/gallery/' + jobId + '?password=' + encodeURIComponent(sessionPassword), {method: 'DELETE'})
+    .then(r => r.json())
+    .then(data => { if (data.ok) updateGallery(); else alert(data.error || 'Error'); })
+    .catch(() => alert('Error'));
+}
+
 function renderGalleryItem(item) {
   const date = new Date(item.created * 1000);
   const timeStr = date.toLocaleString();
+
+  if (item.deleted) {
+    let userInfo = item.user_hash ? ' | user: ' + item.user_hash : '';
+    return '<div class="gallery-item gallery-deleted">'
+      + '<div class="gallery-meta">' + timeStr + userInfo + '</div>'
+      + '<div class="gallery-deleted-msg">このエントリーは削除されました / This entry has been deleted</div>'
+      + '</div>';
+  }
+
   let seedInfo = item.seed !== null && item.seed !== undefined ? ' | seed: ' + item.seed : '';
   let t2iInfo = item.t2i ? ' | t2i' : '';
   let userInfo = item.user_hash ? ' | user: ' + item.user_hash : '';
@@ -1300,8 +1349,13 @@ function renderGalleryItem(item) {
     + '<label><input type="radio" name="gallery_slot2" value="' + resultRef + '" ' + getCheckedAttr(2, resultRef) + '> Img2</label>'
     + '</div></div>';
 
+  let deleteBtn = '';
+  if (item.user_hash && item.user_hash === myUserHash) {
+    deleteBtn = ' <button class="gallery-delete-btn" onclick="deleteGalleryItem(\'' + item.job_id + '\')">&times;</button>';
+  }
+
   return '<div class="gallery-item" data-job-id="' + item.job_id + '">'
-    + '<div class="gallery-meta">' + timeStr + seedInfo + t2iInfo + userInfo + '</div>'
+    + '<div class="gallery-meta">' + timeStr + seedInfo + t2iInfo + userInfo + deleteBtn + '</div>'
     + '<div class="gallery-prompt">' + escapeHtml(item.prompt) + '</div>'
     + '<div class="gallery-images">' + inputThumbs + resultThumb + '</div>'
     + '</div>';
@@ -1326,6 +1380,7 @@ function renderGallery(items) {
   // Validate selections still exist
   const allRefs = new Set();
   for (const item of items) {
+    if (item.deleted) continue;
     allRefs.add(item.job_id + ':result');
     for (let i = 0; i < item.input_count; i++) {
       allRefs.add(item.job_id + ':input:' + i);
@@ -1365,7 +1420,11 @@ function renderGallery(items) {
 function updateGallery() {
   fetch('/api/gallery?password=' + encodeURIComponent(sessionPassword))
     .then(r => r.json())
-    .then(items => { if (!items.error) renderGallery(items); })
+    .then(data => {
+      if (data.error) return;
+      myUserHash = data.caller_hash || '';
+      renderGallery(data.items || []);
+    })
     .catch(() => {});
 }
 

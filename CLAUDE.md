@@ -142,6 +142,7 @@ python app_gguf.py --gallery --password mysecret
 - Gallery mode (`--gallery`): Browse past generation history, click thumbnails to enlarge (lightbox), download links on each image, reuse gallery images as input for new generations via radio button selection (Img1/Img2 slots). Selecting a gallery image automatically disables t2i mode
 - Gallery login gate: When `--gallery` is enabled, a password login screen is shown first; all gallery/result/input APIs require password authentication via query parameter
 - User identification: Each gallery entry shows a hashed user ID (SHA-256 of IP + User-Agent, 8 chars) to distinguish generators. Uses `X-Forwarded-For` header when available (reverse proxy support)
+- Gallery entry deletion: Users can delete their own gallery entries (user_hash match required). Deleted entries remain visible as placeholders showing timestamp, user ID, and bilingual deletion message. Files are not removed (cleaned up by auto-cleanup). `DELETE /api/gallery/<job_id>` sets job status to `"hidden"`
 
 ### Web Server-specific Options
 - `--steps N` (Nunchaku only) - Inference steps: 4 or 8 (default: 8)
