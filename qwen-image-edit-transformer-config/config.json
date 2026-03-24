@@ -1,6 +1,6 @@
 {
   "_class_name": "QwenImageTransformer2DModel",
-  "_diffusers_version": "0.37.0.dev0",
+  "_diffusers_version": "0.36.0",
   "attention_head_dim": 128,
   "axes_dims_rope": [
     16,

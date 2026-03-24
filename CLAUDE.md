@@ -16,9 +16,13 @@ Python scripts for AI-powered image editing using diffusion models:
 ### Web Server Scripts (`server/`)
 6. **server/app_nunchaku.py** - Flask web server for Nunchaku Qwen-Image-Edit-2509 Lightning
 7. **server/app_gguf.py** - Flask web server for GGUF quantized Qwen-Image-Edit-Rapid-AIO-V23
+8. **server/app_aio.py** - Flask web server for Qwen-Image-Edit-Rapid-AIO-V23 (no GGUF/nunchaku dependency)
+
+### Google Colab Notebooks (`notebooks/`)
+9. **notebooks/colab_app_gguf.ipynb** - Google Colab notebook for GGUF web server (cloudflared tunnel, A100 recommended)
 
 ### Utilities
-8. **server/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
+10. **server/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
 
 All CLI scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All scripts also support `--t2i` mode for text-to-image generation without an input image. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
@@ -114,9 +118,19 @@ python app_nunchaku.py --preset "高画質化::Enhance quality." --preset "テ�
 cd server
 python app_gguf.py
 python app_gguf.py --password mysecret --port 8080
+python app_gguf.py --gguf-file "v23/Qwen-Rapid-NSFW-v23_Q2_K.gguf"
 python app_gguf.py --gguf-local "path/to/model.gguf"
 python app_gguf.py --lora "HF_REPO_ID" --lora-weight-name "weights.safetensors"
 python app_gguf.py --gallery --password mysecret
+```
+
+### AIO Web Server
+```powershell
+cd server
+python app_aio.py
+python app_aio.py --password mysecret --port 8080
+python app_aio.py --offload                        # sequential CPU offload (low VRAM)
+python app_aio.py --gallery --password mysecret
 ```
 
 ### Web Server Common Options
@@ -151,9 +165,13 @@ python app_gguf.py --gallery --password mysecret
 - `--steps N` (Nunchaku only) - Inference steps: 4 or 8 (default: 8)
 - `--rank N` (Nunchaku only) - Nunchaku rank (32 or 128)
 - `--num-blocks-on-gpu N` (Nunchaku only) - Blocks on GPU in low-VRAM mode
+- `--gguf-file PATH` (GGUF only) - GGUF file within HF repo (default: `v23/Qwen-Rapid-NSFW-v23_Q3_K.gguf`)
 - `--gguf-local PATH` (GGUF only) - Use local GGUF file directly
+- `--offload` (AIO only) - Sequential CPU offload for low VRAM
 
 **Note:** GGUF server does NOT support `--offload` (sequential CPU offload is incompatible with GGUF tensors). Only default (`enable_model_cpu_offload`) and `--no-offload` are available.
+
+**Note:** AIO server requires significantly more VRAM than GGUF (full bf16 transformer). On Google Colab, use GGUF version instead (A100 recommended).
 
 ## Environment Setup
 
