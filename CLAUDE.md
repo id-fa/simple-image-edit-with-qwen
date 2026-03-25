@@ -11,26 +11,28 @@ Python scripts for AI-powered image editing using diffusion models:
 2. **simple_image_edit_rapid_qwen.py** - Qwen-Image-Edit-Rapid-AIO-V23 (4-step accelerated, no nunchaku)
 3. **simple_image_edit_gguf_qwen.py** - Qwen-Image-Edit-Rapid-AIO-V23 GGUF quantized (Q3_K default, low VRAM)
 4. **simple_image_edit_flux2_klein.py** - FLUX.2 Klein 4B pipeline (requires separate venv with latest diffusers)
-5. **simple_image_edit_zit.py** - Z-Image Turbo (4bit) img2img pipeline (archived; did not meet quality requirements)
+5. **simple_i2v_ltx2_distilled.py** - LTX-2 19B Distilled video generator [diffusers] (fp8 layerwise casting, i2v / flf2v / t2v)
+6. **simple_i2v_ltx2_native.py** - LTX-2 19B Distilled video generator [native ltx-pipelines] (fp8 checkpoint direct, i2v / flf2v / t2v)
+7. **simple_image_edit_zit.py** - Z-Image Turbo (4bit) img2img pipeline (archived; did not meet quality requirements)
 
 ### Web Server Scripts (`server/`)
-6. **server/app_nunchaku.py** - Flask web server for Nunchaku Qwen-Image-Edit-2509 Lightning
-7. **server/app_gguf.py** - Flask web server for GGUF quantized Qwen-Image-Edit-Rapid-AIO-V23
-8. **server/app_aio.py** - Flask web server for Qwen-Image-Edit-Rapid-AIO-V23 (no GGUF/nunchaku dependency)
+8. **server/app_nunchaku.py** - Flask web server for Nunchaku Qwen-Image-Edit-2509 Lightning
+9. **server/app_gguf.py** - Flask web server for GGUF quantized Qwen-Image-Edit-Rapid-AIO-V23
+10. **server/app_aio.py** - Flask web server for Qwen-Image-Edit-Rapid-AIO-V23 (no GGUF/nunchaku dependency)
 
 ### Google Colab Notebooks (`notebooks/`)
-9. **notebooks/colab_app_gguf.ipynb** - Google Colab notebook for GGUF web server (cloudflared tunnel, A100 recommended)
+11. **notebooks/colab_app_gguf.ipynb** - Google Colab notebook for GGUF web server (cloudflared tunnel, A100 recommended)
 
 ### Utilities
-10. **server/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
+12. **server/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
 
-All CLI scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All scripts also support `--t2i` mode for text-to-image generation without an input image. Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
+Image editing scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All image scripts support `--t2i` mode for text-to-image generation. The video script (`simple_i2v_ltx2_distilled.py`) supports i2v (image-to-video), flf2v (first+last frame to video via `--ref`), and t2v (text-to-video via `--t2i`). Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
 Web servers provide browser GUI with password protection, job queue (1 processing + 2 waiting), real-time step progress, cancel functionality, and optional gallery mode with password-gated login.
 
 **Target Environment:** GeForce RTX 3xxx (VRAM 12GB) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
-**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`).
+**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein/LTX-2 cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`). Rapid Qwen, FLUX.2 Klein, and LTX-2 can share the same venv (latest diffusers).
 
 ## Running the Scripts
 
@@ -72,6 +74,27 @@ py .\simple_image_edit_flux2_klein.py .\sample.png --ref ref2.png --ref ref3.png
 py .\simple_image_edit_flux2_klein.py --t2i --prompt "A futuristic city" --size 1024x768
 ```
 
+### LTX-2 19B Distilled [diffusers] — requires diffusers latest (git main)
+```powershell
+py .\simple_i2v_ltx2_distilled.py .\sample.png
+py .\simple_i2v_ltx2_distilled.py .\sample.png --prompt "Camera slowly pans right" --seed 42
+py .\simple_i2v_ltx2_distilled.py .\sample.png --ref last_frame.png --prompt "Smooth transition"
+py .\simple_i2v_ltx2_distilled.py .\sample.png --no-stage2 --offload --num-frames 61
+py .\simple_i2v_ltx2_distilled.py .\sample.png --size 768x512 --pre-resize 0.3m
+py .\simple_i2v_ltx2_distilled.py --t2i --prompt "A cat playing with yarn" --size 768x512 --seed 42
+py .\simple_i2v_ltx2_distilled.py .\sample.png --no-fp8  # bf16 (no fp8 casting)
+```
+
+### LTX-2 19B Distilled [native] — requires ltx-core + ltx-pipelines
+```powershell
+# モデルファイルをローカルにダウンロードして使用
+py .\simple_i2v_ltx2_native.py .\sample.png --checkpoint models\ltx-2-19b-distilled-fp8.safetensors --upsampler models\ltx-2-spatial-upscaler-x2-1.0.safetensors --gemma-root models\gemma-3-4b-it
+py .\simple_i2v_ltx2_native.py .\sample.png --checkpoint models\ltx-2-19b-distilled-fp8.safetensors --upsampler models\ltx-2-spatial-upscaler-x2-1.0.safetensors --gemma-root models\gemma-3-4b-it --prompt "Camera slowly zooms in" --seed 42
+py .\simple_i2v_ltx2_native.py .\sample.png --ref last_frame.png --checkpoint ... --upsampler ... --gemma-root ...
+py .\simple_i2v_ltx2_native.py --t2i --prompt "A cat playing" --checkpoint ... --upsampler ... --gemma-root ...
+py .\simple_i2v_ltx2_native.py .\sample.png --no-audio --checkpoint ... --upsampler ... --gemma-root ...
+```
+
 ### Common Options
 - `--prompt "..."` - Specify prompt (uses `PROMPT` constant if omitted)
 - `--seed N` - Random seed for reproducibility (random if omitted)
@@ -97,6 +120,17 @@ py .\simple_image_edit_flux2_klein.py --t2i --prompt "A futuristic city" --size 
 - `--gguf-repo REPO` (GGUF Qwen) - HuggingFace GGUF repo (default: `Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF`)
 - `--gguf-file PATH` (GGUF Qwen) - GGUF file within repo (default: `v23/Qwen-Rapid-NSFW-v23_Q3_K.gguf`)
 - `--gguf-local PATH` (GGUF Qwen) - Use local GGUF file directly
+- `--num-frames N` (LTX-2) - Number of video frames (default: 121)
+- `--frame-rate N` (LTX-2) - Video frame rate (default: 24.0)
+- `--steps-s2 N` (LTX-2) - Stage 2 inference steps (default: 3)
+- `--no-stage2` (LTX-2) - Skip Stage 2 (latent upsample + refinement)
+- `--no-fp8` (LTX-2 both) - Disable fp8 quantization (load in bf16)
+- `--no-audio` (LTX-2 both) - Output video without audio
+- `--ref FILE` (LTX-2 both) - Last frame image for first+last frame to video (single file only)
+- `--checkpoint PATH` (LTX-2 native) - Distilled checkpoint .safetensors path
+- `--upsampler PATH` (LTX-2 native) - Spatial upsampler .safetensors path
+- `--gemma-root DIR` (LTX-2 native) - Gemma 3 text encoder directory path
+- `--enhance-prompt` (LTX-2 native) - Enable Gemma prompt enhancement
 
 ## Running the Web Servers
 
@@ -210,13 +244,25 @@ pip install -U gguf
 
 GGUF Qwen requires `diffusers>=0.36.0`, so it can share the Nunchaku venv (`diffusers==0.36.x`).
 
-### venv for Rapid Qwen / FLUX.2 Klein (requires latest diffusers)
+### venv for Rapid Qwen / FLUX.2 Klein / LTX-2 diffusers (requires latest diffusers)
 ```powershell
 py -3.11 -m venv .venv-flux2
 .\.venv-flux2\Scripts\activate
 pip install -U pip pillow huggingface_hub psutil transformers accelerate safetensors
 pip install -U git+https://github.com/huggingface/diffusers
 ```
+
+### venv for LTX-2 native (official ltx-pipelines)
+```powershell
+py -3.11 -m venv .venv-ltx2
+.\.venv-ltx2\Scripts\activate
+pip install -U pip pillow ltx-core ltx-pipelines
+```
+
+**Note:** LTX-2 native requires local model files (not auto-downloaded). Download from `https://huggingface.co/Lightricks/LTX-2`:
+- `ltx-2-19b-distilled-fp8.safetensors` (checkpoint)
+- `ltx-2-spatial-upscaler-x2-1.0.safetensors` (upsampler)
+- Gemma 3 text encoder (e.g. `google/gemma-3-4b-it`)
 
 ## Architecture
 
@@ -225,8 +271,8 @@ pip install -U git+https://github.com/huggingface/diffusers
 All scripts share this preprocessing flow:
 
 1. **Pre-resize** (optional): Reduce total pixels to 1M/2M while keeping aspect ratio
-2. **Max Size Cap**: Scale down to fit within 2048×2048 (downscale only)
-3. **Alignment by Padding**: Pad to width×16 and height×16 multiples (not resize)
+2. **Max Size Cap**: Scale down to fit within max bounds (image scripts: 2048×2048, LTX-2: 1280×720)
+3. **Alignment by Padding**: Pad to multiples (image scripts: 16px, LTX-2: 32px)
 
 ### Memory Management
 
@@ -264,6 +310,29 @@ All scripts share this preprocessing flow:
 - Text encoder: Mistral3 (via transformers)
 - Image passed as conditioning reference via `image` parameter
 
+**LTX-2 19B Distilled [diffusers]** (`simple_i2v_ltx2_distilled.py`):
+- 19B parameter DiT-based video generation model (distilled, 8-step Stage1)
+- Pipeline: `LTX2ConditionPipeline` (unified for i2v/flf2v/t2v via `LTX2VideoCondition`)
+- Two-stage generation: Stage1 (8 steps, `DISTILLED_SIGMA_VALUES`) → latent upsample (2x) → Stage2 (3 steps, `STAGE_2_DISTILLED_SIGMA_VALUES`)
+- fp8 via `enable_layerwise_casting(storage_dtype=float8_e4m3fn)` by default (`--no-fp8` to disable)
+- Prefers bf16, falls back to fp16
+- 3-tier offload: default `enable_model_cpu_offload()`, `--offload` for sequential, `--no-offload` for full GPU
+- VAE tiling enabled automatically for Stage 2
+- Model: `rootonchair/LTX-2-19b-distilled` (HF diffusers format)
+- Output: MP4 with audio (via vocoder at 24kHz, `--no-audio` to disable)
+- Size: max 1280x720, aligned to 32px multiples
+
+**LTX-2 19B Distilled [native]** (`simple_i2v_ltx2_native.py`):
+- Same model but via official `ltx-pipelines` codebase (not diffusers)
+- Pipeline: `DistilledPipeline` (two-stage distilled with built-in spatial upsampler)
+- Native fp8 checkpoint support (`ltx-2-19b-distilled-fp8.safetensors` loaded directly)
+- No HF `from_pretrained`; requires local model files (checkpoint, upsampler, Gemma)
+- Quantization: `QuantizationPolicy.fp8_cast()` by default (`--no-fp8` to disable)
+- Image conditioning via `ImageConditioningInput(path, frame_idx, strength, crf)`
+- Output: MP4 with audio (via PyAV H.264, `--no-audio` to disable)
+- Size: max 1280x768, aligned to 64px multiples
+- Install: `pip install ltx-core ltx-pipelines`
+
 **Z-Image Turbo** (archived):
 - 4bit quantization via bitsandbytes (unsloth model)
 - `--offload` enables CPU offloading
@@ -300,6 +369,18 @@ Edit constants at top of each script for fixed values:
 - `MODEL_ID` (`black-forest-labs/FLUX.2-klein-4B`)
 - `LORA` (None), `LORA_WEIGHT_NAME` (None), `LORA_SCALE` (1.0)
 
+**simple_i2v_ltx2_distilled.py** (diffusers):
+- `PROMPT`, `NEGATIVE_PROMPT`, `GUIDANCE_SCALE` (1.0)
+- `NUM_INFERENCE_STEPS_S1` (8), `NUM_INFERENCE_STEPS_S2` (3)
+- `NUM_FRAMES` (121), `FRAME_RATE` (24.0)
+- `MODEL_ID` (`rootonchair/LTX-2-19b-distilled`)
+- `LORA` (None), `LORA_WEIGHT_NAME` (None), `LORA_SCALE` (1.0)
+
+**simple_i2v_ltx2_native.py** (native ltx-pipelines):
+- `PROMPT`, `NEGATIVE_PROMPT`
+- `NUM_FRAMES` (97), `FRAME_RATE` (25.0)
+- `DEFAULT_CHECKPOINT` (None), `DEFAULT_UPSAMPLER` (None), `DEFAULT_GEMMA_ROOT` (None)
+
 **simple_image_edit_zit.py** (archived):
 - `PROMPT`, `NEGATIVE_PROMPT`
 - `NUM_STEPS` (8), `GUIDANCE_SCALE` (0.0), `STRENGTH` (0.6)
@@ -318,6 +399,10 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 **Qwen GGUF**: GGUF from `Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF/v23/`, config from local `qwen-image-edit-transformer-config/`
 
 **FLUX.2 Klein**: `black-forest-labs/FLUX.2-klein-4B`
+
+**LTX-2 (diffusers)**: `rootonchair/LTX-2-19b-distilled` (fp8 via layerwise casting, latent upsampler: `latent_upsampler` subfolder)
+
+**LTX-2 (native)**: Local files from `Lightricks/LTX-2` HF repo (`ltx-2-19b-distilled-fp8.safetensors`, `ltx-2-spatial-upscaler-x2-1.0.safetensors`, Gemma 3 text encoder)
 
 **Z-Image** (archived): `unsloth/Z-Image-Turbo-unsloth-bnb-4bit`
 
@@ -338,6 +423,9 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | CUDA OOM with `--lora` | LoRA increases VRAM usage; combine with `--pre-resize 1m` and offload options |
 | Nunchaku LoRA format | Uses `nunchaku_lora_qwen.py` (ported from ComfyUI-QwenImageLoraLoader); standard diffusers LoRA .safetensors files work |
 | GGUF + `--offload` error | `enable_sequential_cpu_offload()` is incompatible with GGUF tensors; use default offload or `--no-offload` |
+| `LTX2ConditionPipeline` not found | Need latest diffusers: `pip install -U git+https://github.com/huggingface/diffusers` |
+| LTX-2 CUDA OOM | Use `--no-stage2`, `--num-frames 61`, `--size 512x320`, or `--offload` |
+| LTX-2 + Qwen venv conflict | LTX-2 requires latest diffusers (same venv as FLUX.2 Klein / Rapid Qwen) |
 
 ## Cache Management
 
@@ -354,6 +442,8 @@ hf cache rm <revision_id>
 - Qwen (Rapid): `{input_stem}_filtered_rapid.png`
 - Qwen (GGUF): `{input_stem}_filtered_gguf.png`
 - FLUX.2 Klein: `{input_stem}_filtered_klein.png`
+- LTX-2 (diffusers): `{input_stem}_ltx2.mp4`
+- LTX-2 (native): `{input_stem}_ltx2n.mp4`
 - Z-Image: `{input_stem}_filtered_zit.png`
 
-In `--t2i` mode, output files use `t2i` as the stem (e.g. `t2i_filtered.png`, `t2i_filtered_rapid.png`, etc.) in the current directory.
+In `--t2i` mode, image scripts use `t2i` as the stem (e.g. `t2i_filtered.png`), LTX-2 uses `t2v` (e.g. `t2v_ltx2.mp4`), in the current directory.
