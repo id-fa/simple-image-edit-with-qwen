@@ -22,12 +22,14 @@
 #   - ltx-2-spatial-upscaler-x2-1.0.safetensors
 #   - Gemma 3 text encoder directory
 #
-# Download example
+# Download models example
+#    pip install huggingface_hub
 #    mkdir -p /tmp/models/{checkpoints,latent_upscale_models,loras,text_encoders}
 #    hf auth login
-#    hf download Lightricks/LTX-2 ltx-2-19b-distilled-fp8.safetensors --local-dir /tmp/models/checkpoints
-#    hf download Lightricks/LTX-2 ltx-2-spatial-upscaler-x2-1.0.safetensors --local-dir /tmp/models/latent_upscale_models
-#    hf download google/gemma-3-12b-it --local-dir /tmp/models/text_encoders
+#    hf download Lightricks/LTX-2 ltx-2-19b-distilled-fp8.safetensors --local-dir /tmp/models
+#    hf download Lightricks/LTX-2 ltx-2-spatial-upscaler-x2-1.0.safetensors --local-dir /tmp/models
+#    hf download google/gemma-3-12b-it --local-dir /tmp/models
+#     (required approved)
 #
 
 from __future__ import annotations
