@@ -392,8 +392,22 @@ def apply_job_loras(lora_selection: list[dict]):
     print(f"[info]   old: {_current_lora_key}", file=sys.stderr)
     print(f"[info]   new: {new_key}", file=sys.stderr)
 
-    load_pipeline(lora_configs=lora_configs, **_pipeline_args)
-    _current_lora_key = new_key
+    try:
+        load_pipeline(lora_configs=lora_configs, **_pipeline_args)
+        _current_lora_key = new_key
+    except Exception as ex:
+        import traceback
+        traceback.print_exc()
+        print(f"[error] pipeline reload failed, restoring without LoRA...", file=sys.stderr)
+        # Attempt recovery: reload with no LoRAs
+        try:
+            load_pipeline(lora_configs=[], **_pipeline_args)
+            _current_lora_key = ()
+            print(f"[info] recovered: pipeline loaded without LoRA", file=sys.stderr)
+        except Exception:
+            traceback.print_exc()
+            print(f"[error] recovery also failed", file=sys.stderr)
+        raise RuntimeError(f"LoRA reload failed: {ex}")
 
 
 def run_inference(pipe, images: list, prompt: str, seed: int | None, job_id: str):
@@ -469,6 +483,9 @@ def worker_loop():
             if lora_registry:
                 apply_job_loras(job.get("loras", []))
                 pipe = pipeline_ref["pipe"]  # re-read in case of reload
+
+            if pipe is None:
+                raise RuntimeError("Pipeline is not loaded / パイプラインが読み込まれていません")
 
             result_img = run_inference(pipe, image_list, job["prompt"], job["seed"], job_id)
 
