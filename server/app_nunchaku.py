@@ -74,6 +74,8 @@ server_password = "password"
 gallery_enabled = False
 prompt_presets: list[dict[str, str]] = []  # [{"label": "...", "prompt": "..."}]
 lora_registry: list[dict] = []  # [{"name": str, "path": str, "default_scale": float}]
+_pipeline_args: dict = {}  # saved load_pipeline kwargs for reload
+_current_lora_key: tuple | None = None  # (name, scale) tuples for change detection
 drawings: dict[str, dict] = {}  # drawing_id -> {user_hash, created, path, type, source}
 
 
@@ -205,19 +207,32 @@ def parse_lora_args(lora_args: list[str] | None) -> list[dict]:
 # =======================
 def load_pipeline(progress: bool = True, no_offload: bool = False,
                   rank: int = RANK, num_blocks_on_gpu: int = NUM_BLOCKS_ON_GPU,
-                  steps: int = NUM_INFERENCE_STEPS):
-    """Load Nunchaku pipeline once (thread-safe).
+                  steps: int = NUM_INFERENCE_STEPS,
+                  lora_configs: list[tuple] | None = None):
+    """Load Nunchaku pipeline (thread-safe, supports reload).
 
     Offload strategy (same as official nunchaku sample):
       no_offload=True:       pipeline.to("cuda")
       GPU > 18GB:            enable_model_cpu_offload()
       GPU <= 18GB:           transformer.set_offload() + enable_sequential_cpu_offload()
+
+    Args:
+        lora_configs: [(path, scale), ...] LoRAs to apply before offloading.
+                      If None, applies all registered LoRAs at default scale.
     """
     with pipeline_load_lock:
-        if pipeline_ref["pipe"] is not None:
-            return pipeline_ref["pipe"]
-
         import torch
+
+        # Destroy existing pipeline if reloading
+        if pipeline_ref["pipe"] is not None:
+            print("[info] destroying existing pipeline for reload...", file=sys.stderr)
+            old_pipe = pipeline_ref["pipe"]
+            pipeline_ref["pipe"] = None
+            pipeline_ref["dtype"] = None
+            del old_pipe
+            gc.collect()
+            torch.cuda.empty_cache()
+
         from diffusers import FlowMatchEulerDiscreteScheduler, QwenImageEditPlusPipeline
         from nunchaku import NunchakuQwenImageTransformer2DModel
         from nunchaku.utils import get_gpu_memory, get_precision
@@ -252,15 +267,32 @@ def load_pipeline(progress: bool = True, no_offload: bool = False,
         transformer = NunchakuQwenImageTransformer2DModel.from_pretrained(model_path)
         print(f"[info] transformer loaded ({time.time()-t0:.1f}s)", file=sys.stderr)
 
-        # Pre-apply all registered LoRAs BEFORE pipeline construction and offloading.
-        # Nunchaku's set_offload() caches internal buffer sizes; applying LoRA after
-        # offload changes tensor shapes and causes size mismatch errors during inference.
-        if lora_registry:
+        # Pre-apply LoRAs BEFORE pipeline construction and offloading.
+        # Nunchaku's CUDA kernels cache internal buffers at initialization;
+        # LoRA must be baked in before offload setup.
+        if lora_configs is None:
+            lora_configs = [(e["path"], e["default_scale"]) for e in lora_registry]
+        active_configs = [(p, s) for p, s in lora_configs if abs(s) > 1e-5]
+        if active_configs:
             from nunchaku_lora_qwen import compose_loras
-            configs = [(e["path"], e["default_scale"]) for e in lora_registry]
-            n = compose_loras(transformer, configs)
-            print(f"[info] LoRA pre-applied: {n} layers ({len(lora_registry)} LoRAs)", file=sys.stderr)
-
+            safe_configs = []
+            for path, scale in active_configs:
+                try:
+                    n = compose_loras(transformer, [(path, scale)])
+                    safe_configs.append((path, scale))
+                    print(f"[info] LoRA OK: {path} (scale={scale}, {n} layers)", file=sys.stderr)
+                except Exception as ex:
+                    print(f"[warn] LoRA skipped (incompatible): {path}: {ex}", file=sys.stderr)
+                    # Remove from registry so UI doesn't show broken LoRA
+                    lora_registry[:] = [e for e in lora_registry if e["path"] != path]
+            if safe_configs:
+                # Re-apply all safe LoRAs together (compose_loras resets first)
+                compose_loras(transformer, safe_configs)
+                print(f"[info] LoRA applied: {len(safe_configs)} LoRAs", file=sys.stderr)
+            else:
+                print("[info] all LoRAs failed, continuing without LoRA", file=sys.stderr)
+        else:
+            print("[info] no LoRA applied", file=sys.stderr)
 
         # Load pipeline
         scheduler = FlowMatchEulerDiscreteScheduler.from_config(build_scheduler_config())
@@ -317,22 +349,51 @@ def load_pipeline(progress: bool = True, no_offload: bool = False,
             model_info["vae_class"] = pipe.vae.__class__.__name__
         except Exception:
             pass
-        if lora_registry:
-            model_info["loras"] = ", ".join(e["name"] for e in lora_registry)
+        active_names = []
+        for p, s in (active_configs if active_configs else []):
+            for e in lora_registry:
+                if e["path"] == p:
+                    active_names.append(f"{e['name']}({s})")
+                    break
+        model_info["loras"] = ", ".join(active_names) if active_names else ""
 
         print("[info] pipeline ready", file=sys.stderr)
         return pipe
 
 
 def apply_job_loras(lora_selection: list[dict]):
-    """No-op for nunchaku. LoRAs are fixed at startup.
+    """Reload pipeline if LoRA configuration changed since last run.
 
-    Nunchaku's CUDA kernels cache internal buffers at initialization.
-    Modifying packed weight tensors (proj_up/proj_down) after offload setup
-    has no effect on inference — the kernel uses the original buffers.
-    LoRA must be applied before pipeline construction and offloading.
+    Nunchaku's CUDA kernels cache internal buffers at initialization,
+    so LoRA cannot be toggled at runtime. Instead, we detect config
+    changes and reload the entire pipeline from scratch.
     """
-    pass
+    global _current_lora_key
+
+    # Build lora_configs from job selection
+    lora_configs = []
+    selected_names = {s["name"]: s["scale"] for s in lora_selection}
+    for entry in lora_registry:
+        name = entry["name"]
+        if name in selected_names:
+            lora_configs.append((entry["path"], selected_names[name]))
+        else:
+            lora_configs.append((entry["path"], 0.0))
+
+    # Build a comparable key from active LoRAs
+    new_key = tuple(
+        (path, scale) for path, scale in lora_configs if abs(scale) > 1e-5
+    )
+
+    if new_key == _current_lora_key:
+        return  # No change — skip reload
+
+    print(f"[info] LoRA config changed, reloading pipeline...", file=sys.stderr)
+    print(f"[info]   old: {_current_lora_key}", file=sys.stderr)
+    print(f"[info]   new: {new_key}", file=sys.stderr)
+
+    load_pipeline(lora_configs=lora_configs, **_pipeline_args)
+    _current_lora_key = new_key
 
 
 def run_inference(pipe, images: list, prompt: str, seed: int | None, job_id: str):
@@ -404,9 +465,10 @@ def worker_loop():
                 tw, th = round_up(tw, W_MULT), round_up(th, H_MULT)
                 image_list = [Image.new("RGB", (tw, th), (255, 255, 255))]
 
-            # Apply LoRA selection for this job
+            # Apply LoRA selection for this job (may reload pipeline)
             if lora_registry:
                 apply_job_loras(job.get("loras", []))
+                pipe = pipeline_ref["pipe"]  # re-read in case of reload
 
             result_img = run_inference(pipe, image_list, job["prompt"], job["seed"], job_id)
 
@@ -1533,7 +1595,7 @@ fetch('/api/model_info').then(r => r.json()).then(d => {
   modelInfoEl.innerHTML = rows.join('') || 'No model info';
 }).catch(() => { modelInfoEl.textContent = 'Failed to load model info'; });
 
-// LoRA list (nunchaku: fixed at startup, cannot be toggled at runtime)
+// LoRA list (nunchaku: pipeline reloads when config changes)
 fetch('/api/loras').then(r => r.json()).then(loras => {
   if (!loras || loras.length === 0) return;
   const section = document.getElementById('loraSection');
@@ -1544,10 +1606,11 @@ fetch('/api/loras').then(r => r.json()).then(loras => {
   for (const lora of loras) {
     const id = 'lora_' + lora.name.replace(/[^a-zA-Z0-9_]/g, '_');
     html += '<div class="lora-item">'
-      + '<input type="checkbox" id="' + id + '" data-lora="' + lora.name + '" checked disabled>'
+      + '<input type="checkbox" id="' + id + '" data-lora="' + lora.name + '">'
       + '<label class="lora-name" for="' + id + '">' + lora.name + '</label>'
-      + '<span class="lora-scale-val" style="color:#6b7280;font-size:0.75rem;">'
-      + '(scale ' + lora.default_scale + ', fixed at startup)</span>'
+      + '<input type="range" min="0" max="2" step="0.05" value="' + lora.default_scale + '" '
+      + 'id="' + id + '_scale" oninput="this.nextElementSibling.textContent=this.value">'
+      + '<span class="lora-scale-val">' + lora.default_scale + '</span>'
       + '</div>';
   }
   list.innerHTML = html;
@@ -1557,11 +1620,24 @@ t2iCheck.addEventListener('change', () => {
   imageSection.style.display = t2iCheck.checked ? 'none' : 'block';
 });
 
-function setupPreview(input, preview) {
+function clearGallerySlot(slot) {
+  if (slot === 1 && selectedSlot1) {
+    selectedSlot1 = null;
+    document.querySelectorAll('input[name="gallery_slot1"]').forEach(r => r.checked = false);
+  }
+  if (slot === 2 && selectedSlot2) {
+    selectedSlot2 = null;
+    document.querySelectorAll('input[name="gallery_slot2"]').forEach(r => r.checked = false);
+  }
+  updateSlotIndicators();
+}
+
+function setupPreview(input, preview, slot) {
   input.addEventListener('change', () => {
     if (input.files && input.files[0]) {
       preview.src = URL.createObjectURL(input.files[0]);
       preview.style.display = 'block';
+      clearGallerySlot(slot);
     } else {
       preview.style.display = 'none';
     }
@@ -1573,11 +1649,11 @@ function setupPreview(input, preview) {
   });
   preview.title = 'Click to open in drawing editor';
 }
-setupPreview(image1Input, preview1);
-setupPreview(image2Input, preview2);
+setupPreview(image1Input, preview1, 1);
+setupPreview(image2Input, preview2, 2);
 
 // Drag and drop
-function setupDrop(slotEl, inputEl, previewEl) {
+function setupDrop(slotEl, inputEl, previewEl, slot) {
   slotEl.addEventListener('dragover', e => { e.preventDefault(); slotEl.classList.add('dragover'); });
   slotEl.addEventListener('dragleave', () => slotEl.classList.remove('dragover'));
   slotEl.addEventListener('drop', e => {
@@ -1587,13 +1663,14 @@ function setupDrop(slotEl, inputEl, previewEl) {
       inputEl.files = files;
       previewEl.src = URL.createObjectURL(files[0]);
       previewEl.style.display = 'block';
+      clearGallerySlot(slot);
     }
   });
 }
-document.querySelectorAll('.image-slot').forEach(slot => {
+document.querySelectorAll('.image-slot').forEach((slot, idx) => {
   const inp = slot.querySelector('input[type="file"]');
   const prev = slot.querySelector('.preview-thumb');
-  if (inp && prev) setupDrop(slot, inp, prev);
+  if (inp && prev) setupDrop(slot, inp, prev, idx + 1);
 });
 
 // Translate
@@ -2480,11 +2557,27 @@ function clearFileForSlot(slot) {
   if (slot === 2) clearFileInput('image2', 'preview2');
 }
 
+function slotValueToUrl(val) {
+  if (!val) return '';
+  const pw = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
+  if (val.startsWith('drawing:')) return '/api/drawing/' + val.slice(8) + pw;
+  const parts = val.split(':');
+  if (parts.length === 3 && parts[1] === 'input') return '/api/input/' + parts[0] + '/' + parts[2] + pw;
+  if (parts.length === 2 && parts[1] === 'result') return '/api/result/' + parts[0] + pw;
+  return '';
+}
+
 function updateSlotIndicators() {
   const ind1 = document.getElementById('galleryInd1');
   const ind2 = document.getElementById('galleryInd2');
-  if (ind1) ind1.textContent = selectedSlot1 ? 'Gallery: ' + selectedSlot1 : '';
-  if (ind2) ind2.textContent = selectedSlot2 ? 'Gallery: ' + selectedSlot2 : '';
+  [ind1, ind2].forEach((ind, i) => {
+    const val = i === 0 ? selectedSlot1 : selectedSlot2;
+    if (!ind) return;
+    if (!val) { ind.innerHTML = ''; return; }
+    const url = slotValueToUrl(val);
+    ind.innerHTML = (url ? '<img src="' + url + '" style="height:40px;border-radius:3px;vertical-align:middle;margin-right:4px;">' : '')
+      + '<span>Gallery: ' + val + '</span>';
+  });
 }
 
 function getCheckedAttr(slot, value) {
@@ -2685,10 +2778,24 @@ def main():
     # Parse and register LoRAs
     lora_registry.extend(parse_lora_args(args.lora))
 
+    # Save pipeline args for future reloads (LoRA switching)
+    global _pipeline_args, _current_lora_key
+    _pipeline_args = dict(
+        progress=not args.no_progress,
+        no_offload=args.no_offload,
+        rank=args.rank,
+        num_blocks_on_gpu=args.num_blocks_on_gpu,
+        steps=args.steps,
+    )
+
     print("[info] loading model...", file=sys.stderr)
-    load_pipeline(progress=not args.no_progress, no_offload=args.no_offload,
-                  rank=args.rank, num_blocks_on_gpu=args.num_blocks_on_gpu,
-                  steps=args.steps)
+    load_pipeline(**_pipeline_args)
+
+    # Initialize current LoRA key from what was loaded
+    _current_lora_key = tuple(
+        (e["path"], e["default_scale"]) for e in lora_registry
+        if abs(e["default_scale"]) > 1e-5
+    )
 
     # Start worker thread
     worker = threading.Thread(target=worker_loop, daemon=True)

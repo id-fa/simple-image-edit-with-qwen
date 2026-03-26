@@ -1536,11 +1536,24 @@ t2iCheck.addEventListener('change', () => {
 });
 
 // image preview
-function setupPreview(input, preview) {
+function clearGallerySlot(slot) {
+  if (slot === 1 && selectedSlot1) {
+    selectedSlot1 = null;
+    document.querySelectorAll('input[name="gallery_slot1"]').forEach(r => r.checked = false);
+  }
+  if (slot === 2 && selectedSlot2) {
+    selectedSlot2 = null;
+    document.querySelectorAll('input[name="gallery_slot2"]').forEach(r => r.checked = false);
+  }
+  updateSlotIndicators();
+}
+
+function setupPreview(input, preview, slot) {
   input.addEventListener('change', () => {
     if (input.files && input.files[0]) {
       preview.src = URL.createObjectURL(input.files[0]);
       preview.style.display = 'block';
+      clearGallerySlot(slot);
     } else {
       preview.style.display = 'none';
     }
@@ -1552,11 +1565,11 @@ function setupPreview(input, preview) {
   });
   preview.title = 'Click to open in drawing editor';
 }
-setupPreview(image1Input, preview1);
-setupPreview(image2Input, preview2);
+setupPreview(image1Input, preview1, 1);
+setupPreview(image2Input, preview2, 2);
 
 // Drag and drop
-function setupDrop(slotEl, inputEl, previewEl) {
+function setupDrop(slotEl, inputEl, previewEl, slot) {
   slotEl.addEventListener('dragover', e => { e.preventDefault(); slotEl.classList.add('dragover'); });
   slotEl.addEventListener('dragleave', () => slotEl.classList.remove('dragover'));
   slotEl.addEventListener('drop', e => {
@@ -1566,13 +1579,14 @@ function setupDrop(slotEl, inputEl, previewEl) {
       inputEl.files = files;
       previewEl.src = URL.createObjectURL(files[0]);
       previewEl.style.display = 'block';
+      clearGallerySlot(slot);
     }
   });
 }
-document.querySelectorAll('.image-slot').forEach(slot => {
+document.querySelectorAll('.image-slot').forEach((slot, idx) => {
   const inp = slot.querySelector('input[type="file"]');
   const prev = slot.querySelector('.preview-thumb');
-  if (inp && prev) setupDrop(slot, inp, prev);
+  if (inp && prev) setupDrop(slot, inp, prev, idx + 1);
 });
 
 // Translate
@@ -2465,11 +2479,27 @@ function clearFileForSlot(slot) {
   if (slot === 2) clearFileInput('image2', 'preview2');
 }
 
+function slotValueToUrl(val) {
+  if (!val) return '';
+  const pw = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
+  if (val.startsWith('drawing:')) return '/api/drawing/' + val.slice(8) + pw;
+  const parts = val.split(':');
+  if (parts.length === 3 && parts[1] === 'input') return '/api/input/' + parts[0] + '/' + parts[2] + pw;
+  if (parts.length === 2 && parts[1] === 'result') return '/api/result/' + parts[0] + pw;
+  return '';
+}
+
 function updateSlotIndicators() {
   const ind1 = document.getElementById('galleryInd1');
   const ind2 = document.getElementById('galleryInd2');
-  if (ind1) ind1.textContent = selectedSlot1 ? 'Gallery: ' + selectedSlot1 : '';
-  if (ind2) ind2.textContent = selectedSlot2 ? 'Gallery: ' + selectedSlot2 : '';
+  [ind1, ind2].forEach((ind, i) => {
+    const val = i === 0 ? selectedSlot1 : selectedSlot2;
+    if (!ind) return;
+    if (!val) { ind.innerHTML = ''; return; }
+    const url = slotValueToUrl(val);
+    ind.innerHTML = (url ? '<img src="' + url + '" style="height:40px;border-radius:3px;vertical-align:middle;margin-right:4px;">' : '')
+      + '<span>Gallery: ' + val + '</span>';
+  });
 }
 
 function getCheckedAttr(slot, value) {

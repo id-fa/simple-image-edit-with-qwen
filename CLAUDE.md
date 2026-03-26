@@ -142,7 +142,8 @@ python app_nunchaku.py --password mysecret --port 8080
 python app_nunchaku.py --host 0.0.0.0 --no-progress
 python app_nunchaku.py --no-offload --rank 128
 python app_nunchaku.py --steps 4              # 4-step model
-python app_nunchaku.py --lora "path/to/lora.safetensors" --lora-scale 0.8
+python app_nunchaku.py --lora "path/to/lora.safetensors"
+python app_nunchaku.py --lora "repo_id::weight.safetensors" --lora "another.safetensors"
 python app_nunchaku.py --gallery --password mysecret
 python app_nunchaku.py --preset "高画質化::Enhance quality." --preset "テキスト除去::Remove all text."
 ```
@@ -154,7 +155,7 @@ python app_gguf.py
 python app_gguf.py --password mysecret --port 8080
 python app_gguf.py --gguf-file "v23/Qwen-Rapid-NSFW-v23_Q2_K.gguf"
 python app_gguf.py --gguf-local "path/to/model.gguf"
-python app_gguf.py --lora "HF_REPO_ID" --lora-weight-name "weights.safetensors"
+python app_gguf.py --lora "HF_REPO_ID::weights.safetensors" --lora "another.safetensors"
 python app_gguf.py --gallery --password mysecret
 ```
 
@@ -164,6 +165,7 @@ cd server
 python app_aio.py
 python app_aio.py --password mysecret --port 8080
 python app_aio.py --offload                        # sequential CPU offload (low VRAM)
+python app_aio.py --lora "path/to/lora.safetensors" --lora "another.safetensors"
 python app_aio.py --gallery --password mysecret
 ```
 
@@ -173,7 +175,7 @@ python app_aio.py --gallery --password mysecret
 - `--password PW` - Generation password (default: "password")
 - `--no-progress` - Hide HF download progress (shown by default)
 - `--no-offload` - Disable offloading (high VRAM)
-- `--lora`, `--lora-weight-name`, `--lora-scale` - LoRA support (same as CLI)
+- `--lora REPO_OR_PATH` - LoRA weights (repeatable). Format: `path_or_repo` or `repo_id::weight_name`. Multiple `--lora` args register multiple LoRAs
 - `--gallery` - Enable gallery mode (show generation history with image reuse)
 - `--preset "label::prompt"` - Prompt preset button (repeatable). Omit `label::` for auto-numbered labels (`preset1`, `preset2`, ...)
 
@@ -188,9 +190,10 @@ python app_aio.py --gallery --password mysecret
 - Prompt presets (`--preset`): Configurable buttons above prompt textarea. Click to fill prompt with preset text
 - Prompt translation (googletrans): `-> EN` / `-> ZH` buttons for prompt translation
 - File input clear buttons (x) for resetting image selections, drag-and-drop image upload
+- Multi-LoRA support: `--lora` repeatable, WebUI shows checkboxes + strength sliders (0.0-2.0, default unchecked). Selected LoRAs applied dynamically per generation. Nunchaku: pipeline reloads when LoRA config changes (CUDA kernels cache buffers, no runtime toggle). AIO/GGUF: `set_adapters()` for instant switching. Incompatible LoRAs are skipped gracefully (no crash)
 - Model info display: pipeline, transformer, text encoder class, tokenizer, VAE class, dtype, LoRA
 - Error messages: Japanese/English bilingual (i18n)
-- Gallery mode (`--gallery`): Browse past generation history, click thumbnails to enlarge, download links on each image, reuse gallery images as input for new generations via radio button selection (Img1/Img2 slots). Selecting a gallery image automatically disables t2i mode
+- Gallery mode (`--gallery`): Browse past generation history, click thumbnails to enlarge, download links on each image, reuse gallery images as input for new generations via radio button selection (Img1/Img2 slots). Selecting a gallery image automatically disables t2i mode. Selected image shown as thumbnail + ID text below the file input
 - Gallery login gate: When `--gallery` is enabled, a password login screen is shown first; all gallery/result/input APIs require password authentication via query parameter
 - User identification: Each gallery entry shows a hashed user ID (SHA-256 of IP + User-Agent, 8 chars) to distinguish generators. Uses `X-Forwarded-For` header when available (reverse proxy support)
 - Gallery entry deletion: Users can delete their own gallery entries (user_hash match required). Deleted entries remain visible as placeholders showing timestamp, user ID, and bilingual deletion message. Files are not removed (cleaned up by auto-cleanup). `DELETE /api/gallery/<job_id>` sets job status to `"hidden"`
@@ -206,7 +209,7 @@ python app_aio.py --gallery --password mysecret
   - Private to user (user_hash-based access control)
   - Works in both gallery and non-gallery modes
   - Blank sketch button: Start drawing on a 1024x1024 white canvas without any source image
-  - File input auto-clear: Selecting Img1/Img2 via radio buttons clears corresponding file input to avoid ambiguity
+  - File input auto-clear: Selecting Img1/Img2 via radio buttons clears corresponding file input to avoid ambiguity. Conversely, uploading a file (file picker or drag-and-drop) auto-clears the corresponding gallery slot selection
 - Drawing API routes: `POST /api/drawing/save`, `GET /api/drawing/<id>`, `GET /api/drawing/<id>/bg`, `GET /api/drawing/<id>/overlay`, `GET /api/drawings`, `DELETE /api/drawing/<id>`
 
 ### Web Server-specific Options
@@ -284,6 +287,7 @@ All scripts share this preprocessing flow:
   - Low VRAM: `transformer.set_offload()` + `enable_sequential_cpu_offload()`
 - Warns if incompatible diffusers version detected
 - LoRA: via `server/nunchaku_lora_qwen.py` (ported from ComfyUI-QwenImageLoraLoader). Handles QKV fusion, GLU fusion, proj_out split for nunchaku quantized modules. Standard diffusers LoRA files work (no nunchaku-specific format needed). Skips AWQ modulation layers (img_mod/txt_mod) as they are too sensitive
+- LoRA runtime switching: Nunchaku CUDA kernels cache internal buffers at initialization — LoRA cannot be toggled at runtime. Web server detects LoRA config changes between requests and reloads the entire pipeline from scratch (destroy + gc + cuda.empty_cache + recreate). Same config skips reload
 
 **Qwen Rapid-AIO-V23**:
 - 4-step accelerated transformer (from `prithivMLmods/Qwen-Image-Edit-Rapid-AIO-V23`)
@@ -292,6 +296,7 @@ All scripts share this preprocessing flow:
 - No nunchaku dependency; uses standard `QwenImageTransformer2DModel`
 - 3-tier offload: default `enable_model_cpu_offload()`, `--offload` for sequential, `--no-offload` for full GPU
 - Supports negative prompt and true CFG scale
+- LoRA: diffusers API (`load_lora_weights` at startup, `set_adapters` per-request). Incompatible LoRAs skipped gracefully
 
 **Qwen Rapid GGUF**:
 - GGUF quantized version of Rapid-AIO-V23 (from `Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF`)
@@ -301,6 +306,7 @@ All scripts share this preprocessing flow:
 - Transformer config: local `qwen-image-edit-transformer-config/config.json`
 - 3-tier offload: default `enable_model_cpu_offload()`, `--offload` for sequential, `--no-offload` for full GPU
 - Requires `gguf` package
+- LoRA: diffusers API (`load_lora_weights` at startup, `set_adapters` per-request). Incompatible LoRAs skipped gracefully
 
 **FLUX.2 Klein 4B**:
 - 4B parameter rectified flow transformer (distilled)
@@ -422,6 +428,8 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | LoRA load failure | Verify the LoRA is compatible with the target model architecture (Qwen/FLUX.2/Z-Image); check file path or HF repo ID |
 | CUDA OOM with `--lora` | LoRA increases VRAM usage; combine with `--pre-resize 1m` and offload options |
 | Nunchaku LoRA format | Uses `nunchaku_lora_qwen.py` (ported from ComfyUI-QwenImageLoraLoader); standard diffusers LoRA .safetensors files work |
+| Nunchaku LoRA switching slow | Expected: pipeline reloads from scratch on config change (CUDA kernel limitation). Same config reuses existing pipeline |
+| AIO/GGUF LoRA load crash | Some LoRA files lack expected keys (e.g. `img_in.alpha`); server skips incompatible LoRAs and continues |
 | GGUF + `--offload` error | `enable_sequential_cpu_offload()` is incompatible with GGUF tensors; use default offload or `--no-offload` |
 | `LTX2ConditionPipeline` not found | Need latest diffusers: `pip install -U git+https://github.com/huggingface/diffusers` |
 | LTX-2 CUDA OOM | Use `--no-stage2`, `--num-frames 61`, `--size 512x320`, or `--offload` |
