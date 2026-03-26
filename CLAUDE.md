@@ -187,9 +187,12 @@ python app_aio.py --gallery --password mysecret
 - Auto-cleanup: files older than 1 hour removed every 5 minutes
 - Pre-resize: 0.3M or 1M pixels
 - t2i mode: 1024x1024 fixed size
-- Prompt presets (`--preset`): Configurable buttons above prompt textarea. Click to fill prompt with preset text
-- Prompt translation (googletrans): `-> EN` / `-> ZH` buttons for prompt translation
+- Prompt presets (`--preset`): Configurable buttons above prompt textarea. Click to fill prompt with preset text. Confirmation dialog when replacing non-empty prompt
+- Prompt clear button (x) next to label for clearing prompt text
+- Prompt translation (googletrans): `Translate:` label with `-> EN` / `-> ZH` / `-> JA` buttons
 - File input clear buttons (x) for resetting image selections, drag-and-drop image upload
+- Continuous mode: Checkbox to auto-set generation result as Img1 for iterative editing. Result area also shows Img1/Img2 radio buttons for immediate reuse without waiting for gallery refresh
+- Polling safety: Auto-stops polling after 2 min with no response (timeout) or 3 consecutive auth errors
 - Multi-LoRA support: `--lora` repeatable, WebUI shows checkboxes + strength sliders (0.0-2.0, default unchecked). Selected LoRAs applied dynamically per generation. Nunchaku: pipeline reloads when LoRA config changes (CUDA kernels cache buffers, no runtime toggle). AIO/GGUF: `set_adapters()` for instant switching. Incompatible LoRAs are skipped gracefully (no crash)
 - Model info display: pipeline, transformer, text encoder class, tokenizer, VAE class, dtype, LoRA
 - Error messages: Japanese/English bilingual (i18n)

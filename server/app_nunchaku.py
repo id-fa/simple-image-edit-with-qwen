@@ -1193,8 +1193,13 @@ button.cancel-btn:disabled { background: #4a4a5a; }
   transition: background 0.2s;
 }
 .preset-btn:hover { background: #3a3a4a; }
+.prompt-clear-btn {
+  background: none; border: 1px solid #4a4a5a; color: #9ca3af; cursor: pointer;
+  font-size: 0.85rem; padding: 0 5px; border-radius: 3px; line-height: 1.2;
+}
+.prompt-clear-btn:hover { color: #ef4444; border-color: #ef4444; }
 .translate-row {
-  display: flex; gap: 8px; margin-top: 6px;
+  display: flex; gap: 8px; margin-top: 6px; align-items: center;
 }
 .translate-row button {
   padding: 4px 14px; font-size: 0.8rem;
@@ -1426,6 +1431,10 @@ button.cancel-btn:disabled { background: #4a4a5a; }
       <input type="checkbox" id="t2i" name="t2i">
       <label for="t2i">Text-to-Image (t2i) mode (1024x1024)</label>
     </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="continuousMode">
+      <label for="continuousMode">Continuous mode (auto-set result to Img1)</label>
+    </div>
 
     <div id="imageSection">
       <div class="image-slot">
@@ -1443,7 +1452,10 @@ button.cancel-btn:disabled { background: #4a4a5a; }
       <button type="button" class="blank-sketch-btn" onclick="openBlankCanvas()">+ Blank Sketch</button>
     </div>
 
-    <label for="prompt">Prompt (blank = default)</label>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <label for="prompt" style="margin:0;">Prompt (blank = default)</label>
+      <button type="button" class="prompt-clear-btn" onclick="document.getElementById('prompt').value=''" title="Clear prompt">&times;</button>
+    </div>
     {% if prompt_presets %}
     <div class="preset-row">
       {% for p in prompt_presets %}
@@ -1453,8 +1465,10 @@ button.cancel-btn:disabled { background: #4a4a5a; }
     {% endif %}
     <textarea id="prompt" name="prompt" placeholder="Fix visible seams and misalignment..."></textarea>
     <div class="translate-row">
+      <span class="de-group-label" style="margin-right:2px;">Translate:</span>
       <button type="button" id="translateEn">&rarr; EN</button>
       <button type="button" id="translateZh">&rarr; ZH</button>
+      <button type="button" id="translateJa">&rarr; JA</button>
     </div>
 
     <label for="pre_resize">Pre-resize</label>
@@ -1724,13 +1738,33 @@ async function doTranslate(target) {
 }
 document.getElementById('translateEn').addEventListener('click', () => doTranslate('en'));
 document.getElementById('translateZh').addEventListener('click', () => doTranslate('zh-cn'));
+document.getElementById('translateJa').addEventListener('click', () => doTranslate('ja'));
 
 // Preset buttons
 document.querySelectorAll('.preset-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.getElementById('prompt').value = btn.getAttribute('data-prompt');
+    const promptEl = document.getElementById('prompt');
+    if (promptEl.value.trim() && !confirm('Replace current prompt? / 現在のプロンプトを置き換えますか？')) return;
+    promptEl.value = btn.getAttribute('data-prompt');
   });
 });
+
+// Result slot handler (for Img1/Img2 radio buttons on result area)
+function handleResultSlot(slot, value) {
+  if (slot === 1) {
+    selectedSlot1 = value;
+    clearFileForSlot(1);
+    // Uncheck t2i
+    const t2i = document.getElementById('t2i');
+    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
+  } else {
+    selectedSlot2 = value;
+    clearFileForSlot(2);
+    const t2i = document.getElementById('t2i');
+    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
+  }
+  updateSlotIndicators();
+}
 
 function updateQueueInfo() {
   fetch('/api/queue_info')
@@ -1831,10 +1865,27 @@ form.addEventListener('submit', async (e) => {
     statusText.className = 'status-text queued';
     statusText.textContent = `Queued (position: ${data.queue_position})`;
 
+    let pollLastOk = Date.now();
+    let pollAuthFails = 0;
     pollTimer = setInterval(async () => {
       try {
         const sr = await fetch(`/api/status/${jobId}`);
         const sd = await sr.json();
+
+        // Auth error detection
+        if (sd.error && /password|auth|forbidden/i.test(sd.error)) {
+          pollAuthFails++;
+          if (pollAuthFails >= 3) {
+            clearInterval(pollTimer); pollTimer = null;
+            statusText.className = 'status-text error';
+            statusText.textContent = 'Error: authentication failed / パスワードエラー';
+            resetUI();
+            return;
+          }
+        } else {
+          pollAuthFails = 0;
+          pollLastOk = Date.now();
+        }
 
         if (sd.status === 'queued') {
           statusText.className = 'status-text queued';
@@ -1855,11 +1906,21 @@ form.addEventListener('submit', async (e) => {
           progressBar.style.width = '100%';
           const rPw = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
           const rUrl = `/api/result/${jobId}${rPw}`;
+          const resultRef = jobId + ':result';
           resultArea.innerHTML = `
             <img src="${rUrl}" alt="result" style="cursor:pointer;" title="Click to open in drawing editor" onclick="openDrawingEditor('${rUrl}')">
-            <br>
-            <a href="${rUrl}" download="result_${jobId}.png">Download</a>
+            <div style="margin-top:6px;display:flex;gap:12px;align-items:center;font-size:0.8rem;">
+              <a href="${rUrl}" download="result_${jobId}.png">Download</a>
+              <label><input type="radio" name="gallery_slot1" value="${resultRef}" onclick="handleResultSlot(1,'${resultRef}')"> Img1</label>
+              <label><input type="radio" name="gallery_slot2" value="${resultRef}" onclick="handleResultSlot(2,'${resultRef}')"> Img2</label>
+            </div>
           `;
+          // Continuous mode: auto-set result as Img1
+          if (document.getElementById('continuousMode').checked) {
+            handleResultSlot(1, resultRef);
+            const r1 = resultArea.querySelector('input[name="gallery_slot1"]');
+            if (r1) r1.checked = true;
+          }
           resetUI();
         } else if (sd.status === 'cancelled') {
           clearInterval(pollTimer); pollTimer = null;
@@ -1872,7 +1933,15 @@ form.addEventListener('submit', async (e) => {
           statusText.textContent = 'Error: ' + (sd.error || 'unknown');
           resetUI();
         }
-      } catch (err) {}
+      } catch (err) {
+        // Network error: check timeout
+        if (Date.now() - pollLastOk > 120000) {
+          clearInterval(pollTimer); pollTimer = null;
+          statusText.className = 'status-text error';
+          statusText.textContent = 'Error: polling timeout (no response for 2 min) / ポーリングタイムアウト';
+          resetUI();
+        }
+      }
     }, 3000);
 
   } catch (err) {
