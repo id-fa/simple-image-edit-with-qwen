@@ -550,6 +550,7 @@ def compose_loras(
         for module_key, (A, B, alpha) in processed.items():
             aggregated[module_key].append({
                 "A": A, "B": B, "alpha": alpha, "strength": strength,
+                "lora_idx": idx,
             })
 
     # Apply aggregated weights
@@ -579,6 +580,7 @@ def compose_loras(
             target_device = torch.device("cuda")
 
         all_A, all_B = [], []
+        per_lora_ranks = []  # [(lora_idx, rank), ...]
         for w in weight_list:
             A, B, alpha = w["A"], w["B"], w["alpha"]
             rank = A.shape[0]
@@ -589,6 +591,7 @@ def compose_loras(
                 scale *= (alpha / rank)
             all_A.append(A.to(dtype=target_dtype, device=target_device))
             all_B.append((B * scale).to(dtype=target_dtype, device=target_device))
+            per_lora_ranks.append((w.get("lora_idx", 0), rank))
 
         if not all_A:
             continue
@@ -599,6 +602,16 @@ def compose_loras(
         try:
             _apply_to_module(module, final_A, final_B, resolved_name, model)
             applied += 1
+
+            # Track per-LoRA column boundaries within appended columns
+            if not hasattr(model, "_lora_boundaries"):
+                model._lora_boundaries = {}
+            boundaries = []
+            offset = 0
+            for lora_idx, lora_rank in per_lora_ranks:
+                boundaries.append({"lora_idx": lora_idx, "offset": offset, "rank": lora_rank})
+                offset += lora_rank
+            model._lora_boundaries[resolved_name] = boundaries
         except Exception as ex:
             logger.warning(f"[FAIL] {resolved_name}: {ex}")
 

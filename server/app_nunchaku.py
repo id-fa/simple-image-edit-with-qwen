@@ -73,6 +73,7 @@ model_info: dict[str, str] = {}
 server_password = "password"
 gallery_enabled = False
 prompt_presets: list[dict[str, str]] = []  # [{"label": "...", "prompt": "..."}]
+lora_registry: list[dict] = []  # [{"name": str, "path": str, "default_scale": float}]
 drawings: dict[str, dict] = {}  # drawing_id -> {user_hash, created, path, type, source}
 
 
@@ -147,12 +148,64 @@ def build_scheduler_config():
 
 
 # =======================
+# LoRA argument parsing
+# =======================
+def parse_lora_args(lora_args: list[str] | None) -> list[dict]:
+    """Parse --lora arguments and resolve file paths.
+
+    Format: "path_or_repo" or "repo_id::weight_name"
+    Returns: list of {"name": str, "path": str, "default_scale": float}
+    """
+    if not lora_args:
+        return []
+
+    registry = []
+    for raw in lora_args:
+        weight_name = None
+        if "::" in raw:
+            repo_or_path, weight_name = raw.split("::", 1)
+        else:
+            repo_or_path = raw
+
+        # Resolve to local file path
+        if os.path.isfile(repo_or_path):
+            local_path = repo_or_path
+            name = Path(repo_or_path).stem
+        else:
+            from huggingface_hub import hf_hub_download
+            fn = weight_name or "pytorch_lora_weights.safetensors"
+            print(f"[info] downloading LoRA: {repo_or_path} / {fn}", file=sys.stderr)
+            local_path = hf_hub_download(repo_id=repo_or_path, filename=fn)
+            name = repo_or_path.split("/")[-1]
+            if weight_name:
+                wn_stem = Path(weight_name).stem
+                if wn_stem != "pytorch_lora_weights":
+                    name += "/" + wn_stem
+
+        # Deduplicate names
+        base_name = name
+        counter = 2
+        existing_names = {e["name"] for e in registry}
+        while name in existing_names:
+            name = f"{base_name}_{counter}"
+            counter += 1
+
+        registry.append({
+            "name": name,
+            "path": local_path,
+            "default_scale": 1.0,
+        })
+        print(f"[info] LoRA registered: {name} -> {local_path}", file=sys.stderr)
+
+    return registry
+
+
+# =======================
 # Pipeline management
 # =======================
 def load_pipeline(progress: bool = True, no_offload: bool = False,
                   rank: int = RANK, num_blocks_on_gpu: int = NUM_BLOCKS_ON_GPU,
-                  lora: str | None = None, lora_weight_name: str | None = None,
-                  lora_scale: float = 1.0, steps: int = NUM_INFERENCE_STEPS):
+                  steps: int = NUM_INFERENCE_STEPS):
     """Load Nunchaku pipeline once (thread-safe).
 
     Offload strategy (same as official nunchaku sample):
@@ -199,20 +252,15 @@ def load_pipeline(progress: bool = True, no_offload: bool = False,
         transformer = NunchakuQwenImageTransformer2DModel.from_pretrained(model_path)
         print(f"[info] transformer loaded ({time.time()-t0:.1f}s)", file=sys.stderr)
 
-        # LoRA loading (via lora_qwen.py — ported from ComfyUI-QwenImageLoraLoader)
-        if lora:
-            print(f"[info] loading LoRA: {lora}", file=sys.stderr)
-            lora_path = lora
-            if lora_weight_name:
-                from huggingface_hub import hf_hub_download
-                lora_path = hf_hub_download(repo_id=lora, filename=lora_weight_name)
-            elif not os.path.isfile(lora):
-                # HF repo without weight_name — download default safetensors
-                from huggingface_hub import hf_hub_download
-                lora_path = hf_hub_download(repo_id=lora, filename="pytorch_lora_weights.safetensors")
-            from nunchaku_lora_qwen import apply_lora
-            n_applied = apply_lora(transformer, lora_path, strength=lora_scale)
-            print(f"[info] LoRA loaded: {n_applied} layers (scale={lora_scale})", file=sys.stderr)
+        # Pre-apply all registered LoRAs BEFORE pipeline construction and offloading.
+        # Nunchaku's set_offload() caches internal buffer sizes; applying LoRA after
+        # offload changes tensor shapes and causes size mismatch errors during inference.
+        if lora_registry:
+            from nunchaku_lora_qwen import compose_loras
+            configs = [(e["path"], e["default_scale"]) for e in lora_registry]
+            n = compose_loras(transformer, configs)
+            print(f"[info] LoRA pre-applied: {n} layers ({len(lora_registry)} LoRAs)", file=sys.stderr)
+
 
         # Load pipeline
         scheduler = FlowMatchEulerDiscreteScheduler.from_config(build_scheduler_config())
@@ -269,14 +317,22 @@ def load_pipeline(progress: bool = True, no_offload: bool = False,
             model_info["vae_class"] = pipe.vae.__class__.__name__
         except Exception:
             pass
-        if lora:
-            model_info["lora"] = lora
-            if lora_weight_name:
-                model_info["lora_weight_name"] = lora_weight_name
-            model_info["lora_scale"] = str(lora_scale)
+        if lora_registry:
+            model_info["loras"] = ", ".join(e["name"] for e in lora_registry)
 
         print("[info] pipeline ready", file=sys.stderr)
         return pipe
+
+
+def apply_job_loras(lora_selection: list[dict]):
+    """No-op for nunchaku. LoRAs are fixed at startup.
+
+    Nunchaku's CUDA kernels cache internal buffers at initialization.
+    Modifying packed weight tensors (proj_up/proj_down) after offload setup
+    has no effect on inference — the kernel uses the original buffers.
+    LoRA must be applied before pipeline construction and offloading.
+    """
+    pass
 
 
 def run_inference(pipe, images: list, prompt: str, seed: int | None, job_id: str):
@@ -347,6 +403,10 @@ def worker_loop():
                 tw, th = T2I_SIZE
                 tw, th = round_up(tw, W_MULT), round_up(th, H_MULT)
                 image_list = [Image.new("RGB", (tw, th), (255, 255, 255))]
+
+            # Apply LoRA selection for this job
+            if lora_registry:
+                apply_job_loras(job.get("loras", []))
 
             result_img = run_inference(pipe, image_list, job["prompt"], job["seed"], job_id)
 
@@ -562,6 +622,16 @@ def submit():
         if not prompt or prompt == PROMPT_DEFAULT:
             return jsonify({"error": "t2iモードではプロンプトの入力が必要です / Prompt is required in t2i mode"}), 400
 
+    # Parse LoRA selection
+    import json as _json
+    lora_selection = []
+    loras_raw = request.form.get("loras", "").strip()
+    if loras_raw:
+        try:
+            lora_selection = _json.loads(loras_raw)
+        except Exception:
+            pass
+
     user_hash = get_user_hash()
 
     with job_lock:
@@ -578,6 +648,7 @@ def submit():
             "current_step": 0,
             "total_steps": NUM_INFERENCE_STEPS,
             "user_hash": user_hash,
+            "loras": lora_selection,
         }
         processing_queue.append(job_id)
         queue_pos = len(processing_queue)
@@ -743,6 +814,12 @@ def serve_input(job_id, index):
 @app.route("/api/model_info")
 def get_model_info():
     return jsonify(model_info)
+
+
+@app.route("/api/loras")
+def get_loras():
+    return jsonify([{"name": e["name"], "default_scale": e["default_scale"]}
+                     for e in lora_registry])
 
 
 @app.route("/api/queue_info")
@@ -960,6 +1037,13 @@ select { appearance: auto; }
 .checkbox-row input[type="checkbox"] { width: 18px; height: 18px; }
 .checkbox-row label { margin: 0; }
 .btn-row { display: flex; gap: 10px; align-items: center; margin-top: 20px; }
+.lora-section { margin-top: 12px; }
+.lora-section-label { font-size: 0.85rem; color: #a78bfa; margin-bottom: 6px; }
+.lora-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.lora-item input[type="checkbox"] { margin: 0; accent-color: #7c3aed; }
+.lora-item .lora-name { font-size: 0.8rem; color: #d1d5db; min-width: 80px; }
+.lora-item input[type="range"] { flex: 1; max-width: 160px; accent-color: #7c3aed; }
+.lora-item .lora-scale-val { font-size: 0.75rem; color: #9ca3af; min-width: 30px; text-align: right; }
 button {
   padding: 10px 28px;
   background: #7c3aed; color: #fff;
@@ -1160,6 +1244,31 @@ button.cancel-btn:disabled { background: #4a4a5a; }
   width: 100%; height: 100%;
   cursor: crosshair; touch-action: none;
 }
+#selCanvas {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+#selCanvas.active { pointer-events: auto; cursor: crosshair; touch-action: none; }
+#selCanvas.pasting { pointer-events: auto; cursor: move; touch-action: none; }
+.de-copy-menu {
+  position: fixed; z-index: 1010;
+  background: #1a1a2e; border: 1px solid #4a4a6a; border-radius: 6px;
+  padding: 4px; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+.de-copy-menu button {
+  display: block; width: 100%; padding: 5px 14px; font-size: 0.75rem;
+  background: #2a2a3a; border: 1px solid #4a4a5a; border-radius: 3px;
+  color: #d1d5db; cursor: pointer; text-align: left; margin: 2px 0;
+  white-space: nowrap;
+}
+.de-copy-menu button:hover { background: #3a3a5a; }
+.de-paste-bar {
+  display: none; padding: 3px 8px;
+  background: #1a2a1a; border: 1px solid #10b981; border-radius: 4px;
+  color: #d1fae5; font-size: 0.7rem; align-items: center; gap: 6px;
+}
+.de-paste-bar.active { display: flex; }
 /* Drawings section */
 #drawingsSection { display: none; }
 .drawing-card.draft { border-color: #4a4a1a; }
@@ -1268,6 +1377,11 @@ button.cancel-btn:disabled { background: #4a4a5a; }
     <label for="seed">Seed (blank = random)</label>
     <input type="number" id="seed" name="seed" placeholder="optional">
 
+    <div class="lora-section" id="loraSection" style="display:none;">
+      <div class="lora-section-label">LoRA</div>
+      <div id="loraList"></div>
+    </div>
+
     <div class="btn-row">
       <button type="submit" id="submitBtn">Generate</button>
       <button type="button" id="cancelBtn" class="cancel-btn" style="display:none;">Cancel</button>
@@ -1302,6 +1416,7 @@ button.cancel-btn:disabled { background: #4a4a5a; }
         <button class="de-tool-btn active" data-tool="pen">Pen</button>
         <button class="de-tool-btn" data-tool="eraser">Eraser</button>
         <button class="de-tool-btn" data-tool="overwrite">Cover</button>
+        <button class="de-tool-btn" data-tool="select">Select</button>
       </div>
       <div class="de-sep"></div>
       <div class="de-group" id="deColorGroup">
@@ -1313,18 +1428,30 @@ button.cancel-btn:disabled { background: #4a4a5a; }
       </div>
       <div class="de-sep"></div>
       <div class="de-group">
+        <button class="de-action-btn" id="dePasteBtn" onclick="startPaste()" disabled style="background:#1a1a3a;border-color:#6366f1;color:#a5b4fc;">Paste</button>
         <button class="de-action-btn" onclick="drawUndo()">Undo</button>
         <button class="de-action-btn" onclick="pauseDrawing()" style="background:#4a3a1a;border-color:#eab308;color:#fef08a;">Pause</button>
         <button class="de-action-btn save" onclick="saveDrawingToServer('composite')">Save(+bg)</button>
         <button class="de-action-btn save" onclick="saveDrawingToServer('overlay')">Save(line)</button>
         <button class="de-action-btn close" onclick="closeDrawingEditor()">Close</button>
       </div>
+      <div class="de-paste-bar" id="dePasteBar">
+        <span>Paste mode — drag to move, corners to resize</span>
+        <button class="de-action-btn save" onclick="confirmPaste()">Confirm</button>
+        <button class="de-action-btn close" onclick="cancelPaste()">Cancel</button>
+      </div>
     </div>
     <div class="de-canvas-area">
       <div class="de-canvas-wrap">
         <canvas id="bgCanvas"></canvas>
         <canvas id="drawCanvas"></canvas>
+        <canvas id="selCanvas"></canvas>
       </div>
+    </div>
+    <div class="de-copy-menu" id="deCopyMenu">
+      <button onclick="deCopyRegion('bg')">Copy (bg)</button>
+      <button onclick="deCopyRegion('draw')">Copy (draw)</button>
+      <button onclick="deCopyRegion('composite')">Copy (+bg)</button>
     </div>
   </div>
 </div>
@@ -1397,14 +1524,34 @@ fetch('/api/model_info').then(r => r.json()).then(d => {
     pipeline: 'Pipeline', transformer: 'Transformer',
     text_encoder_class: 'Text Encoder', tokenizer: 'Tokenizer', vae_class: 'VAE',
     dtype: 'Dtype', steps: 'Steps', rank: 'Rank',
-    lora: 'LoRA', lora_weight_name: 'LoRA File', lora_scale: 'LoRA Scale'
+    loras: 'LoRAs'
   };
-  const order = ['pipeline','transformer','text_encoder_class','tokenizer','vae_class','dtype','steps','rank','lora','lora_weight_name','lora_scale'];
+  const order = ['pipeline','transformer','text_encoder_class','tokenizer','vae_class','dtype','steps','rank','loras'];
   for (const k of order) {
     if (d[k]) rows.push(`<div class="mi-row"><span class="mi-label">${labels[k] || k}</span><span class="mi-val">${d[k]}</span></div>`);
   }
   modelInfoEl.innerHTML = rows.join('') || 'No model info';
 }).catch(() => { modelInfoEl.textContent = 'Failed to load model info'; });
+
+// LoRA list (nunchaku: fixed at startup, cannot be toggled at runtime)
+fetch('/api/loras').then(r => r.json()).then(loras => {
+  if (!loras || loras.length === 0) return;
+  const section = document.getElementById('loraSection');
+  const list = document.getElementById('loraList');
+  if (!section || !list) return;
+  section.style.display = 'block';
+  let html = '';
+  for (const lora of loras) {
+    const id = 'lora_' + lora.name.replace(/[^a-zA-Z0-9_]/g, '_');
+    html += '<div class="lora-item">'
+      + '<input type="checkbox" id="' + id + '" data-lora="' + lora.name + '" checked disabled>'
+      + '<label class="lora-name" for="' + id + '">' + lora.name + '</label>'
+      + '<span class="lora-scale-val" style="color:#6b7280;font-size:0.75rem;">'
+      + '(scale ' + lora.default_scale + ', fixed at startup)</span>'
+      + '</div>';
+  }
+  list.innerHTML = html;
+}).catch(() => {});
 
 t2iCheck.addEventListener('change', () => {
   imageSection.style.display = t2iCheck.checked ? 'none' : 'block';
@@ -1538,6 +1685,19 @@ form.addEventListener('submit', async (e) => {
     }
   }
 
+  // Collect LoRA selection
+  const loraChecks = document.querySelectorAll('#loraList input[type="checkbox"]');
+  if (loraChecks.length > 0) {
+    const sel = [];
+    loraChecks.forEach(cb => {
+      if (cb.checked) {
+        const scaleEl = document.getElementById(cb.id + '_scale');
+        sel.push({name: cb.dataset.lora, scale: parseFloat(scaleEl ? scaleEl.value : '1.0')});
+      }
+    });
+    fd.append('loras', JSON.stringify(sel));
+  }
+
   submitBtn.disabled = true;
   cancelBtn.style.display = 'inline-block';
   cancelBtn.disabled = false;
@@ -1635,6 +1795,17 @@ let deHistory = [];
 let deMaxHistory = 30;
 let deSourceUrl = '';
 
+// === Copy & Paste state ===
+let deClipboard = null;
+let deSelecting = false;
+let deSelStart = null;
+let deSelEnd = null;
+let dePasteMode = false;
+let dePasteX = 0, dePasteY = 0;
+let dePasteW = 0, dePasteH = 0;
+let dePasteDrag = null;
+let dePasteResize = null;
+
 function initDrawingEditor() {
   const colorGroup = document.getElementById('deColorGroup');
   const sizeGroup = document.getElementById('deSizeGroup');
@@ -1674,11 +1845,19 @@ function initDrawingEditor() {
 
   document.querySelectorAll('.de-tool-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (dePasteMode) return;
       deCurrentTool = btn.dataset.tool;
       document.querySelectorAll('.de-tool-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       const c = document.getElementById('drawCanvas');
-      if (c) c.style.cursor = deCurrentTool === 'pen' ? 'crosshair' : 'cell';
+      const sc = document.getElementById('selCanvas');
+      if (deCurrentTool === 'select') {
+        if (c) c.style.cursor = 'default';
+        if (sc) sc.classList.add('active');
+      } else {
+        if (c) c.style.cursor = deCurrentTool === 'pen' ? 'crosshair' : 'cell';
+        if (sc) { sc.classList.remove('active'); hideCopyMenu(); clearSelCanvas(); }
+      }
     });
   });
 }
@@ -1693,15 +1872,18 @@ function openDrawingEditor(imageUrl) {
   const bgCanvas = document.getElementById('bgCanvas');
   const drawCanvas = document.getElementById('drawCanvas');
 
+  const selCanvas = document.getElementById('selCanvas');
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.onload = function() {
-    bgCanvas.width = drawCanvas.width = img.naturalWidth;
-    bgCanvas.height = drawCanvas.height = img.naturalHeight;
+    bgCanvas.width = drawCanvas.width = selCanvas.width = img.naturalWidth;
+    bgCanvas.height = drawCanvas.height = selCanvas.height = img.naturalHeight;
     bgCanvas.getContext('2d').drawImage(img, 0, 0);
     drawCanvas.getContext('2d').clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    selCanvas.getContext('2d').clearRect(0, 0, selCanvas.width, selCanvas.height);
     deHistory = [];
     deSourceUrl = imageUrl;
+    dePasteMode = false;
     editor.style.display = 'flex';
     deDrawSaveState();
   };
@@ -1711,6 +1893,9 @@ function openDrawingEditor(imageUrl) {
 function closeDrawingEditor() {
   const editor = document.getElementById('drawingEditor');
   if (editor) editor.style.display = 'none';
+  cancelPaste();
+  hideCopyMenu();
+  clearSelCanvas();
 }
 
 async function pauseDrawing() {
@@ -1752,13 +1937,15 @@ function resumeDrawing(drawingId) {
   if (!editor) return;
   const bgCanvas = document.getElementById('bgCanvas');
   const drawCanvas = document.getElementById('drawCanvas');
+  const selCanvas = document.getElementById('selCanvas');
   const pw = sessionPassword ? '?password=' + encodeURIComponent(sessionPassword) : '';
 
   const bgImg = new Image();
   bgImg.crossOrigin = 'anonymous';
   bgImg.onload = function() {
-    bgCanvas.width = drawCanvas.width = bgImg.naturalWidth;
-    bgCanvas.height = drawCanvas.height = bgImg.naturalHeight;
+    bgCanvas.width = drawCanvas.width = selCanvas.width = bgImg.naturalWidth;
+    bgCanvas.height = drawCanvas.height = selCanvas.height = bgImg.naturalHeight;
+    selCanvas.getContext('2d').clearRect(0, 0, selCanvas.width, selCanvas.height);
     bgCanvas.getContext('2d').drawImage(bgImg, 0, 0);
 
     const ovImg = new Image();
@@ -1788,21 +1975,30 @@ function openBlankCanvas() {
   if (!editor) return;
   const bgCanvas = document.getElementById('bgCanvas');
   const drawCanvas = document.getElementById('drawCanvas');
+  const selCanvas = document.getElementById('selCanvas');
   const w = 1024, h = 1024;
-  bgCanvas.width = drawCanvas.width = w;
-  bgCanvas.height = drawCanvas.height = h;
+  bgCanvas.width = drawCanvas.width = selCanvas.width = w;
+  bgCanvas.height = drawCanvas.height = selCanvas.height = h;
   const bgCtx = bgCanvas.getContext('2d');
   bgCtx.fillStyle = '#ffffff';
   bgCtx.fillRect(0, 0, w, h);
   drawCanvas.getContext('2d').clearRect(0, 0, w, h);
+  selCanvas.getContext('2d').clearRect(0, 0, w, h);
   deHistory = [];
   deSourceUrl = '';
+  dePasteMode = false;
   editor.style.display = 'flex';
   deDrawSaveState();
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeDrawingEditor();
+  if (e.key === 'Escape') {
+    if (dePasteMode) { cancelPaste(); return; }
+    const menu = document.getElementById('deCopyMenu');
+    if (menu && menu.style.display === 'block') { hideCopyMenu(); clearSelCanvas(); return; }
+    closeDrawingEditor();
+  }
+  if (e.key === 'Enter' && dePasteMode) { confirmPaste(); }
 });
 
 function deGetCoords(e) {
@@ -1831,10 +2027,194 @@ function drawUndo() {
   c.getContext('2d').putImageData(deHistory[deHistory.length - 1], 0, 0);
 }
 
+// === Copy & Paste functions ===
+function deGetSelCoords(e) {
+  const c = document.getElementById('selCanvas');
+  if (!c) return {x:0, y:0};
+  const r = c.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (c.width / r.width),
+    y: (e.clientY - r.top) * (c.height / r.height)
+  };
+}
+
+function deGetSelRect() {
+  if (!deSelStart || !deSelEnd) return null;
+  return {
+    x: Math.min(deSelStart.x, deSelEnd.x),
+    y: Math.min(deSelStart.y, deSelEnd.y),
+    w: Math.abs(deSelEnd.x - deSelStart.x),
+    h: Math.abs(deSelEnd.y - deSelStart.y)
+  };
+}
+
+function deDrawSelRect() {
+  const c = document.getElementById('selCanvas');
+  if (!c) return;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  const r = deGetSelRect();
+  if (!r || r.w < 2 || r.h < 2) return;
+  ctx.save();
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = '#00ff88';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(r.x, r.y, r.w, r.h);
+  ctx.restore();
+}
+
+function deCopyRegion(source) {
+  const r = deGetSelRect();
+  if (!r || r.w < 2 || r.h < 2) return;
+  const bgCanvas = document.getElementById('bgCanvas');
+  const drawCanvas = document.getElementById('drawCanvas');
+  const tmp = document.createElement('canvas');
+  tmp.width = Math.round(r.w); tmp.height = Math.round(r.h);
+  const tmpCtx = tmp.getContext('2d');
+  const sx = Math.round(r.x), sy = Math.round(r.y), sw = tmp.width, sh = tmp.height;
+  if (source === 'bg') {
+    tmpCtx.drawImage(bgCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  } else if (source === 'draw') {
+    tmpCtx.drawImage(drawCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  } else {
+    tmpCtx.drawImage(bgCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+    tmpCtx.drawImage(drawCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  }
+  deClipboard = tmp;
+  const btn = document.getElementById('dePasteBtn');
+  if (btn) { btn.disabled = false; btn.style.background = '#2a2a6a'; }
+  hideCopyMenu();
+  clearSelCanvas();
+}
+
+function showCopyMenu(e) {
+  const r = deGetSelRect();
+  if (!r) return;
+  const menu = document.getElementById('deCopyMenu');
+  if (!menu) return;
+  const sc = document.getElementById('selCanvas');
+  if (!sc) return;
+  const rect = sc.getBoundingClientRect();
+  const scaleX = rect.width / sc.width;
+  const scaleY = rect.height / sc.height;
+  let mx = rect.left + (r.x + r.w) * scaleX + 4;
+  let my = rect.top + r.y * scaleY;
+  if (mx + 140 > window.innerWidth) mx = rect.left + r.x * scaleX - 140;
+  if (my + 100 > window.innerHeight) my = window.innerHeight - 110;
+  menu.style.left = mx + 'px';
+  menu.style.top = my + 'px';
+  menu.style.display = 'block';
+}
+
+function hideCopyMenu() {
+  const menu = document.getElementById('deCopyMenu');
+  if (menu) menu.style.display = 'none';
+}
+
+function clearSelCanvas() {
+  const c = document.getElementById('selCanvas');
+  if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+  deSelStart = deSelEnd = null;
+}
+
+function startPaste() {
+  if (!deClipboard || dePasteMode) return;
+  hideCopyMenu();
+  clearSelCanvas();
+  dePasteMode = true;
+  dePasteW = deClipboard.width;
+  dePasteH = deClipboard.height;
+  const dc = document.getElementById('drawCanvas');
+  if (dc) {
+    dePasteX = Math.round((dc.width - dePasteW) / 2);
+    dePasteY = Math.round((dc.height - dePasteH) / 2);
+  }
+  const sc = document.getElementById('selCanvas');
+  if (sc) { sc.classList.remove('active'); sc.classList.add('pasting'); }
+  renderPastePreview();
+  const bar = document.getElementById('dePasteBar');
+  if (bar) bar.classList.add('active');
+}
+
+function renderPastePreview() {
+  const c = document.getElementById('selCanvas');
+  if (!c || !deClipboard) return;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.drawImage(deClipboard, dePasteX, dePasteY, dePasteW, dePasteH);
+  ctx.save();
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = '#00aaff';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(dePasteX, dePasteY, dePasteW, dePasteH);
+  ctx.setLineDash([]);
+  const hs = Math.max(8, Math.min(16, Math.min(dePasteW, dePasteH) * 0.1));
+  ctx.fillStyle = '#00aaff';
+  const corners = [
+    [dePasteX, dePasteY], [dePasteX + dePasteW, dePasteY],
+    [dePasteX, dePasteY + dePasteH], [dePasteX + dePasteW, dePasteY + dePasteH]
+  ];
+  for (const [cx, cy] of corners) ctx.fillRect(cx - hs/2, cy - hs/2, hs, hs);
+  ctx.fillStyle = '#00aaff';
+  ctx.font = '14px monospace';
+  ctx.fillText(Math.round(dePasteW) + '\u00d7' + Math.round(dePasteH), dePasteX, dePasteY - 6);
+  ctx.restore();
+}
+
+function confirmPaste() {
+  if (!deClipboard || !dePasteMode) return;
+  const dc = document.getElementById('drawCanvas');
+  if (!dc) return;
+  deDrawSaveState();
+  const ctx = dc.getContext('2d');
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(deClipboard, dePasteX, dePasteY, dePasteW, dePasteH);
+  cancelPaste();
+}
+
+function cancelPaste() {
+  dePasteMode = false;
+  dePasteDrag = null;
+  dePasteResize = null;
+  const c = document.getElementById('selCanvas');
+  if (c) {
+    c.getContext('2d').clearRect(0, 0, c.width, c.height);
+    c.classList.remove('pasting');
+    if (deCurrentTool === 'select') c.classList.add('active');
+  }
+  const bar = document.getElementById('dePasteBar');
+  if (bar) bar.classList.remove('active');
+}
+
+function deHitPasteCorner(p) {
+  const sc = document.getElementById('selCanvas');
+  if (!sc) return null;
+  const r = sc.getBoundingClientRect();
+  const hitR = 14 * (sc.width / r.width);
+  const corners = [
+    {x: dePasteX, y: dePasteY, c: 'tl'},
+    {x: dePasteX + dePasteW, y: dePasteY, c: 'tr'},
+    {x: dePasteX, y: dePasteY + dePasteH, c: 'bl'},
+    {x: dePasteX + dePasteW, y: dePasteY + dePasteH, c: 'br'}
+  ];
+  for (const corner of corners) {
+    if (Math.abs(p.x - corner.x) < hitR && Math.abs(p.y - corner.y) < hitR) return corner.c;
+  }
+  return null;
+}
+
+function deHitPasteRect(p) {
+  return p.x >= dePasteX && p.x <= dePasteX + dePasteW &&
+         p.y >= dePasteY && p.y <= dePasteY + dePasteH;
+}
+
+// === Pointer events for drawing, selection, and paste ===
 (function() {
+  // Drawing events on drawCanvas
   document.addEventListener('pointerdown', function(e) {
     const c = document.getElementById('drawCanvas');
     if (!c || e.target !== c) return;
+    if (dePasteMode || deCurrentTool === 'select') return;
     e.preventDefault();
     deIsDrawing = true;
     deDrawSaveState();
@@ -1872,6 +2252,109 @@ function drawUndo() {
 
   document.addEventListener('pointerup', function() {
     deIsDrawing = false;
+  });
+
+  // Selection & paste events on selCanvas
+  document.addEventListener('pointerdown', function(e) {
+    const sc = document.getElementById('selCanvas');
+    if (!sc || e.target !== sc) return;
+
+    if (dePasteMode) {
+      e.preventDefault();
+      const p = deGetSelCoords(e);
+      const corner = deHitPasteCorner(p);
+      if (corner) {
+        dePasteResize = {startX: p.x, startY: p.y, origW: dePasteW, origH: dePasteH, origX: dePasteX, origY: dePasteY, corner: corner};
+      } else if (deHitPasteRect(p)) {
+        dePasteDrag = {startX: p.x, startY: p.y, origX: dePasteX, origY: dePasteY};
+      }
+      return;
+    }
+
+    if (deCurrentTool === 'select') {
+      e.preventDefault();
+      hideCopyMenu();
+      deSelecting = true;
+      deSelStart = deGetSelCoords(e);
+      deSelEnd = {...deSelStart};
+    }
+  });
+
+  document.addEventListener('pointermove', function(e) {
+    const sc = document.getElementById('selCanvas');
+    if (!sc) return;
+
+    if (dePasteMode) {
+      if (dePasteResize) {
+        e.preventDefault();
+        const p = deGetSelCoords(e);
+        const dx = p.x - dePasteResize.startX;
+        const dy = p.y - dePasteResize.startY;
+        const cn = dePasteResize.corner;
+        if (cn === 'br') {
+          dePasteW = Math.max(10, dePasteResize.origW + dx);
+          dePasteH = Math.max(10, dePasteResize.origH + dy);
+        } else if (cn === 'bl') {
+          const nw = Math.max(10, dePasteResize.origW - dx);
+          dePasteX = dePasteResize.origX + dePasteResize.origW - nw;
+          dePasteW = nw;
+          dePasteH = Math.max(10, dePasteResize.origH + dy);
+        } else if (cn === 'tr') {
+          dePasteW = Math.max(10, dePasteResize.origW + dx);
+          const nh = Math.max(10, dePasteResize.origH - dy);
+          dePasteY = dePasteResize.origY + dePasteResize.origH - nh;
+          dePasteH = nh;
+        } else if (cn === 'tl') {
+          const nw = Math.max(10, dePasteResize.origW - dx);
+          const nh = Math.max(10, dePasteResize.origH - dy);
+          dePasteX = dePasteResize.origX + dePasteResize.origW - nw;
+          dePasteY = dePasteResize.origY + dePasteResize.origH - nh;
+          dePasteW = nw;
+          dePasteH = nh;
+        }
+        renderPastePreview();
+      } else if (dePasteDrag) {
+        e.preventDefault();
+        const p = deGetSelCoords(e);
+        dePasteX = dePasteDrag.origX + (p.x - dePasteDrag.startX);
+        dePasteY = dePasteDrag.origY + (p.y - dePasteDrag.startY);
+        renderPastePreview();
+      } else if (e.target === sc) {
+        const p = deGetSelCoords(e);
+        const corner = deHitPasteCorner(p);
+        if (corner) {
+          sc.style.cursor = (corner === 'tl' || corner === 'br') ? 'nwse-resize' : 'nesw-resize';
+        } else if (deHitPasteRect(p)) {
+          sc.style.cursor = 'move';
+        } else {
+          sc.style.cursor = 'default';
+        }
+      }
+      return;
+    }
+
+    if (deSelecting) {
+      e.preventDefault();
+      deSelEnd = deGetSelCoords(e);
+      deDrawSelRect();
+    }
+  });
+
+  document.addEventListener('pointerup', function(e) {
+    if (dePasteMode) {
+      dePasteDrag = null;
+      dePasteResize = null;
+      return;
+    }
+    if (deSelecting) {
+      deSelecting = false;
+      const r = deGetSelRect();
+      if (r && r.w > 4 && r.h > 4) {
+        showCopyMenu(e);
+      } else {
+        clearSelCanvas();
+      }
+    }
   });
 })();
 
@@ -2176,12 +2659,8 @@ def main():
                     help="Nunchaku rank: 32 or 128 (default: 32)")
     ap.add_argument("--num-blocks-on-gpu", type=int, default=NUM_BLOCKS_ON_GPU,
                     help="Blocks to keep on GPU in low-VRAM mode (default: 1)")
-    ap.add_argument("--lora", default=None, metavar="REPO_OR_PATH",
-                    help="LoRA weights: HF repo ID or local .safetensors path")
-    ap.add_argument("--lora-weight-name", default=None, metavar="FILE",
-                    help="Weight file name within HF repo (optional)")
-    ap.add_argument("--lora-scale", type=float, default=1.0,
-                    help="LoRA strength (default: 1.0)")
+    ap.add_argument("--lora", action="append", default=[], metavar="REPO_OR_PATH",
+                    help="LoRA weights (repeatable). Format: path_or_repo or repo::weight_name")
     ap.add_argument("--gallery", action="store_true",
                     help="Enable gallery mode (show generation history)")
     ap.add_argument("--preset", action="append", default=[], metavar='"label::prompt"',
@@ -2203,11 +2682,13 @@ def main():
 
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Parse and register LoRAs
+    lora_registry.extend(parse_lora_args(args.lora))
+
     print("[info] loading model...", file=sys.stderr)
     load_pipeline(progress=not args.no_progress, no_offload=args.no_offload,
                   rank=args.rank, num_blocks_on_gpu=args.num_blocks_on_gpu,
-                  lora=args.lora, lora_weight_name=args.lora_weight_name,
-                  lora_scale=args.lora_scale, steps=args.steps)
+                  steps=args.steps)
 
     # Start worker thread
     worker = threading.Thread(target=worker_loop, daemon=True)
