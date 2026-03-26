@@ -239,6 +239,8 @@ hf cache rm <リビジョンID>
 
 CLIスクリプトをFlaskベースのWebサーバーとして提供します。ブラウザからGUIで画像編集が可能です。
 
+> **詳細は [README_server.md](README_server.md) を参照してください。**
+
 ### server/app_nunchaku.py — Nunchaku版Webサーバー
 
 ```powershell
@@ -489,6 +491,8 @@ Default cache locations:
 ### Web Servers (`server/`)
 
 Flask-based web servers with browser GUI for image editing.
+
+> **See [README_server.md](README_server.md) for details.**
 
 #### server/app_nunchaku.py — Nunchaku Web Server
 
