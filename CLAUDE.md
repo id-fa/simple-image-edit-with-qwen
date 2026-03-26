@@ -199,7 +199,7 @@ python app_aio.py --gallery --password mysecret
 - Gallery entry deletion: Users can delete their own gallery entries (user_hash match required). Deleted entries remain visible as placeholders showing timestamp, user ID, and bilingual deletion message. Files are not removed (cleaned up by auto-cleanup). `DELETE /api/gallery/<job_id>` sets job status to `"hidden"`
 - Drawing editor: Click any image (gallery thumbnails, upload previews, generated results) to open a full-screen drawing editor with:
   - Dual-canvas architecture: background layer (original image) + transparent overlay layer (drawings)
-  - Tools: Pen (freehand drawing), Eraser (removes overlay pixels only via `destination-out`), Cover (white paint over original image)
+  - Tools: Pen (freehand drawing), Brush (pressure-sensitive pen — line width scales with pen pressure), Airbrush (pressure-sensitive spray — radius and density scale with pressure), Eraser (removes overlay pixels only via `destination-out`), Cover (white paint over original image)
   - Color palette: 10 preset colors + custom color picker
   - Line sizes: 1, 2, 4, 8, 14, 24, 64 pixels
   - Undo history (up to 30 steps)

@@ -1390,6 +1390,8 @@ button.cancel-btn:disabled { background: #4a4a5a; }
     <div class="de-toolbar">
       <div class="de-group">
         <button class="de-tool-btn active" data-tool="pen">Pen</button>
+        <button class="de-tool-btn" data-tool="brush">Brush</button>
+        <button class="de-tool-btn" data-tool="airbrush">Air</button>
         <button class="de-tool-btn" data-tool="eraser">Eraser</button>
         <button class="de-tool-btn" data-tool="overwrite">Cover</button>
         <button class="de-tool-btn" data-tool="select">Select</button>
@@ -1856,7 +1858,8 @@ function initDrawingEditor() {
         if (c) c.style.cursor = 'default';
         if (sc) sc.classList.add('active');
       } else {
-        if (c) c.style.cursor = deCurrentTool === 'pen' ? 'crosshair' : 'cell';
+        const cursors = {pen:'crosshair', brush:'crosshair', airbrush:'crosshair', eraser:'cell', overwrite:'cell'};
+        if (c) c.style.cursor = cursors[deCurrentTool] || 'crosshair';
         if (sc) { sc.classList.remove('active'); hideCopyMenu(); clearSelCanvas(); }
       }
     });
@@ -2209,6 +2212,29 @@ function deHitPasteRect(p) {
 }
 
 // === Pointer events for drawing, selection, and paste ===
+let deLastPoint = null;
+
+function deAirbrushSpray(ctx, x, y, radius, color, density) {
+  const [r, g, b] = deParseColor(color);
+  for (let i = 0; i < density; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * radius;
+    const sx = x + Math.cos(angle) * dist;
+    const sy = y + Math.sin(angle) * dist;
+    const alpha = (1 - dist / radius) * 0.3;
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.fillRect(sx - 0.5, sy - 0.5, 1, 1);
+  }
+}
+
+function deParseColor(color) {
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 1, 1);
+  const d = ctx.getImageData(0, 0, 1, 1).data;
+  return [d[0], d[1], d[2]];
+}
+
 (function() {
   // Drawing events on drawCanvas
   document.addEventListener('pointerdown', function(e) {
@@ -2220,6 +2246,29 @@ function deHitPasteRect(p) {
     deDrawSaveState();
     const ctx = c.getContext('2d');
     const p = deGetCoords(e);
+    const pressure = e.pressure || 0.5;
+
+    if (deCurrentTool === 'airbrush') {
+      ctx.globalCompositeOperation = 'source-over';
+      const radius = deLineWidth * (0.5 + pressure * 1.5);
+      const density = Math.round(radius * pressure * 3);
+      deAirbrushSpray(ctx, p.x, p.y, radius, deCurrentColor, density);
+      deLastPoint = p;
+      return;
+    }
+
+    if (deCurrentTool === 'brush') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = deCurrentColor;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = deLineWidth * pressure;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      deLastPoint = p;
+      return;
+    }
+
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
     ctx.lineCap = 'round';
@@ -2235,6 +2284,7 @@ function deHitPasteRect(p) {
       ctx.globalCompositeOperation = 'source-over';
       ctx.strokeStyle = '#ffffff';
     }
+    deLastPoint = p;
   });
 
   document.addEventListener('pointermove', function(e) {
@@ -2244,14 +2294,38 @@ function deHitPasteRect(p) {
     e.preventDefault();
     const ctx = c.getContext('2d');
     const p = deGetCoords(e);
+    const pressure = e.pressure || 0.5;
+
+    if (deCurrentTool === 'airbrush') {
+      ctx.globalCompositeOperation = 'source-over';
+      const radius = deLineWidth * (0.5 + pressure * 1.5);
+      const density = Math.round(radius * pressure * 3);
+      deAirbrushSpray(ctx, p.x, p.y, radius, deCurrentColor, density);
+      deLastPoint = p;
+      return;
+    }
+
+    if (deCurrentTool === 'brush') {
+      const w = deLineWidth * pressure;
+      ctx.lineWidth = w;
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      deLastPoint = p;
+      return;
+    }
+
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
+    deLastPoint = p;
   });
 
   document.addEventListener('pointerup', function() {
     deIsDrawing = false;
+    deLastPoint = null;
   });
 
   // Selection & paste events on selCanvas
