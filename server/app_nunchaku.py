@@ -1331,6 +1331,16 @@ button.cancel-btn:disabled { background: #4a4a5a; }
   color: #d1fae5; font-size: 0.7rem; align-items: center; gap: 6px;
 }
 .de-paste-bar.active { display: flex; }
+/* Loupe */
+#deLoupe {
+  position: fixed; pointer-events: none; z-index: 1005;
+  width: 140px; height: 140px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.6);
+  box-shadow: 0 0 8px rgba(0,0,0,0.7);
+  display: none; overflow: hidden;
+  image-rendering: pixelated;
+}
+#deLoupeCanvas { display: block; width: 100%; height: 100%; }
 /* Drawings section */
 #drawingsSection { display: none; }
 .drawing-card.draft { border-color: #4a4a1a; }
@@ -1517,6 +1527,7 @@ button.cancel-btn:disabled { background: #4a4a5a; }
       <button onclick="deCopyRegion('draw')">Copy (draw)</button>
       <button onclick="deCopyRegion('composite')">Copy (+bg)</button>
     </div>
+    <div id="deLoupe"><canvas id="deLoupeCanvas" width="280" height="280"></canvas></div>
   </div>
 </div>
 
@@ -1976,6 +1987,7 @@ function closeDrawingEditor() {
   cancelPaste();
   hideCopyMenu();
   clearSelCanvas();
+  deLoupeHide();
 }
 
 async function pauseDrawing() {
@@ -2288,6 +2300,65 @@ function deHitPasteRect(p) {
          p.y >= dePasteY && p.y <= dePasteY + dePasteH;
 }
 
+// === Loupe (magnifier) ===
+const DE_LOUPE_ZOOM = 4;
+const DE_LOUPE_SIZE = 140;
+const DE_LOUPE_CANVAS_SIZE = 280;
+
+function deLoupeUpdate(e) {
+  const loupe = document.getElementById('deLoupe');
+  const loupeCanvas = document.getElementById('deLoupeCanvas');
+  const bgCanvas = document.getElementById('bgCanvas');
+  const drawCanvas = document.getElementById('drawCanvas');
+  if (!loupe || !loupeCanvas || !bgCanvas || !drawCanvas) return;
+  if (deCurrentTool === 'select' || dePasteMode) { loupe.style.display = 'none'; return; }
+
+  const rect = drawCanvas.getBoundingClientRect();
+  const cx = e.clientX, cy = e.clientY;
+  if (cx < rect.left || cx > rect.right || cy < rect.top || cy > rect.bottom) {
+    loupe.style.display = 'none'; return;
+  }
+
+  // Position loupe offset from cursor
+  let lx = cx + 20, ly = cy - DE_LOUPE_SIZE - 20;
+  if (lx + DE_LOUPE_SIZE > window.innerWidth) lx = cx - DE_LOUPE_SIZE - 20;
+  if (ly < 0) ly = cy + 20;
+  loupe.style.left = lx + 'px';
+  loupe.style.top = ly + 'px';
+  loupe.style.display = 'block';
+
+  // Source coordinates in canvas pixel space
+  const scaleX = bgCanvas.width / rect.width;
+  const scaleY = bgCanvas.height / rect.height;
+  const srcX = (cx - rect.left) * scaleX;
+  const srcY = (cy - rect.top) * scaleY;
+  const srcR = DE_LOUPE_CANVAS_SIZE / (2 * DE_LOUPE_ZOOM);
+
+  const ctx = loupeCanvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, DE_LOUPE_CANVAS_SIZE, DE_LOUPE_CANVAS_SIZE);
+  // Draw bg + overlay magnified
+  ctx.drawImage(bgCanvas,
+    srcX - srcR, srcY - srcR, srcR * 2, srcR * 2,
+    0, 0, DE_LOUPE_CANVAS_SIZE, DE_LOUPE_CANVAS_SIZE);
+  ctx.drawImage(drawCanvas,
+    srcX - srcR, srcY - srcR, srcR * 2, srcR * 2,
+    0, 0, DE_LOUPE_CANVAS_SIZE, DE_LOUPE_CANVAS_SIZE);
+  // Crosshair
+  const half = DE_LOUPE_CANVAS_SIZE / 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(half, 0); ctx.lineTo(half, DE_LOUPE_CANVAS_SIZE);
+  ctx.moveTo(0, half); ctx.lineTo(DE_LOUPE_CANVAS_SIZE, half);
+  ctx.stroke();
+}
+
+function deLoupeHide() {
+  const loupe = document.getElementById('deLoupe');
+  if (loupe) loupe.style.display = 'none';
+}
+
 // === Pointer events for drawing, selection, and paste ===
 let deLastPoint = null;
 
@@ -2365,6 +2436,7 @@ function deParseColor(color) {
   });
 
   document.addEventListener('pointermove', function(e) {
+    deLoupeUpdate(e);
     if (!deIsDrawing) return;
     const c = document.getElementById('drawCanvas');
     if (!c) return;
@@ -2403,6 +2475,7 @@ function deParseColor(color) {
   document.addEventListener('pointerup', function() {
     deIsDrawing = false;
     deLastPoint = null;
+    deLoupeHide();
   });
 
   // Selection & paste events on selCanvas
