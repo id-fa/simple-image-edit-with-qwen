@@ -206,6 +206,7 @@ python app_aio.py --gallery --password mysecret
   - Color palette: 10 preset colors + custom color picker
   - Line sizes: 1, 2, 4, 8, 14, 24, 64 pixels
   - Undo history (up to 30 steps)
+  - Copy & paste: Select tool for region selection, copy (bg/draw/composite), paste with drag-move and corner-resize. Lock ratio checkbox for aspect-ratio-locked resize
   - Save options: composite (bg + overlay merged), line-only (overlay layer only)
   - Draft/pause: Save both layers as a resumable draft with DRAFT label thumbnail. Drafts cannot be used as Img1/Img2
   - Saved drawings appear as thumbnails with Img1/Img2 radio buttons and download/delete controls

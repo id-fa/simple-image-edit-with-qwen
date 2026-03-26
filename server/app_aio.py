@@ -1439,6 +1439,7 @@ button.cancel-btn:disabled { background: #4a4a5a; }
       </div>
       <div class="de-paste-bar" id="dePasteBar">
         <span>Paste mode — drag to move, corners to resize</span>
+        <label style="margin-left:8px;font-size:13px;cursor:pointer;"><input type="checkbox" id="dePasteKeepRatio" style="vertical-align:middle;"> Lock ratio</label>
         <button class="de-action-btn save" onclick="confirmPaste()">Confirm</button>
         <button class="de-action-btn close" onclick="cancelPaste()">Cancel</button>
       </div>
@@ -2496,22 +2497,25 @@ function deParseColor(color) {
         const dx = p.x - dePasteResize.startX;
         const dy = p.y - dePasteResize.startY;
         const cn = dePasteResize.corner;
+        const lockRatio = document.getElementById('dePasteKeepRatio').checked;
+        const aspect = dePasteResize.origW / dePasteResize.origH;
         if (cn === 'br') {
           dePasteW = Math.max(10, dePasteResize.origW + dx);
-          dePasteH = Math.max(10, dePasteResize.origH + dy);
+          dePasteH = lockRatio ? Math.max(10, dePasteW / aspect) : Math.max(10, dePasteResize.origH + dy);
         } else if (cn === 'bl') {
           const nw = Math.max(10, dePasteResize.origW - dx);
+          const nh = lockRatio ? Math.max(10, nw / aspect) : Math.max(10, dePasteResize.origH + dy);
           dePasteX = dePasteResize.origX + dePasteResize.origW - nw;
           dePasteW = nw;
-          dePasteH = Math.max(10, dePasteResize.origH + dy);
+          dePasteH = nh;
         } else if (cn === 'tr') {
           dePasteW = Math.max(10, dePasteResize.origW + dx);
-          const nh = Math.max(10, dePasteResize.origH - dy);
+          const nh = lockRatio ? Math.max(10, dePasteW / aspect) : Math.max(10, dePasteResize.origH - dy);
           dePasteY = dePasteResize.origY + dePasteResize.origH - nh;
           dePasteH = nh;
         } else if (cn === 'tl') {
           const nw = Math.max(10, dePasteResize.origW - dx);
-          const nh = Math.max(10, dePasteResize.origH - dy);
+          const nh = lockRatio ? Math.max(10, nw / aspect) : Math.max(10, dePasteResize.origH - dy);
           dePasteX = dePasteResize.origX + dePasteResize.origW - nw;
           dePasteY = dePasteResize.origY + dePasteResize.origH - nh;
           dePasteW = nw;
