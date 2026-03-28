@@ -686,7 +686,15 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
 });
 
 // Result slot handler (for Img1/Img2 radio buttons on result area)
-function handleResultSlot(slot, value) {
+function handleResultSlot(slot, value, radioEl) {
+  const current = slot === 1 ? selectedSlot1 : selectedSlot2;
+  if (current === value) {
+    // Already selected — toggle off
+    if (radioEl) radioEl.checked = false;
+    if (slot === 1) selectedSlot1 = null; else selectedSlot2 = null;
+    updateSlotIndicators();
+    return;
+  }
   if (slot === 1) {
     selectedSlot1 = value;
     clearFileForSlot(1);
@@ -857,8 +865,8 @@ form.addEventListener('submit', async (e) => {
             <img src="${rUrl}" alt="result" style="cursor:pointer;" title="Click to open in drawing editor" onclick="openDrawingEditor('${rUrl}')">
             <div style="margin-top:6px;display:flex;gap:12px;align-items:center;font-size:0.8rem;">
               <a href="${rUrl}" download="result_${jobId}.png">Download</a>
-              <label><input type="radio" name="gallery_slot1" value="${resultRef}" onclick="handleResultSlot(1,'${resultRef}')"> Img1</label>
-              <label><input type="radio" name="gallery_slot2" value="${resultRef}" onclick="handleResultSlot(2,'${resultRef}')"> Img2</label>
+              <label><input type="radio" name="gallery_slot1" value="${resultRef}" onclick="handleResultSlot(1,'${resultRef}',this)"> Img1</label>
+              <label><input type="radio" name="gallery_slot2" value="${resultRef}" onclick="handleResultSlot(2,'${resultRef}',this)"> Img2</label>
             </div>
           `;
           if (document.getElementById('continuousMode').checked) {
