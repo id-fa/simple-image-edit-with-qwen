@@ -249,7 +249,7 @@ python app_comfyui.py --preset "高画質化::Enhance quality." --preset "テキ
 
 **Note:** AIO server requires significantly more VRAM than GGUF (full bf16 transformer). On Google Colab, use GGUF version instead (A100 recommended).
 
-**Note:** ComfyUI server requires a running ComfyUI instance. No torch/diffusers dependency — only flask, requests, pillow, websocket-client. Requires ComfyUI with `Qwen-Rapid-AIO-NSFW-v23.safetensors`, `qwen2.5-vl-7b-instruct-abliterated.safetensors`, and `qwen_image_vae.safetensors` models. LoRA files in `server/LoRA/` must be in ComfyUI's search path (use `--comfyui-path` for auto-registration). HTML template is loaded from `app_aio.py` at runtime.
+**Note:** ComfyUI server requires a running ComfyUI instance. No torch/diffusers dependency — only flask, requests, pillow, websocket-client. Requires ComfyUI with `Qwen-Rapid-AIO-NSFW-v23.safetensors`, `qwen2.5-vl-7b-instruct-abliterated.safetensors`, and `qwen_image_vae.safetensors` models. LoRA files in `server/LoRA/` must be in ComfyUI's search path (use `--comfyui-path` for auto-registration).
 
 ## Environment Setup
 
@@ -392,7 +392,7 @@ All scripts share this preprocessing flow:
 - LoRA: scans `server/LoRA/` folder, matches against ComfyUI's known LoRAs via `/object_info/LoraLoaderModelOnly`. Workflow has 3 `LoraLoaderModelOnly` slots chained (UNETLoader → slot1 → slot2 → slot3 → ModelSamplingAuraFlow); unused slots are removed from workflow and chain is rewired
 - `--comfyui-path`: auto-registers LoRA path in `extra_model_paths.yaml` and reboots ComfyUI via Manager API (`GET /manager/reboot`)
 - Steps/CFG: set directly on KSampler node
-- HTML template: loaded from `app_aio.py` source at runtime via regex extraction (avoids 1900-line duplication), with ComfyUI-specific UI injected (preview checkbox, preview area)
+- HTML template: standalone `server/app_comfyui_template.html` (no app_aio.py dependency), includes ComfyUI-specific UI (preview checkbox, preview area)
 - Startup checks: ComfyUI connectivity, required model availability (UNET/CLIP/VAE), LoRA path registration
 
 ### Configurable Parameters

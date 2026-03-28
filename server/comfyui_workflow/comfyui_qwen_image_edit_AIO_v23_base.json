@@ -859,8 +859,8 @@
         "randomize",
         8,
         1,
-        "er_sde",
-        "beta57",
+        "euler_ancestral",
+        "beta",
         1
       ]
     },

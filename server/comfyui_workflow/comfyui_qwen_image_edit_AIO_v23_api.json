@@ -190,8 +190,8 @@
       "seed": 0,
       "steps": 8,
       "cfg": 1,
-      "sampler_name": "er_sde",
-      "scheduler": "beta57",
+      "sampler_name": "euler_ancestral",
+      "scheduler": "beta",
       "denoise": 1,
       "model": [
         "436",

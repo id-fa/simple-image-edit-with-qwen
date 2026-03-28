@@ -27,7 +27,6 @@ import json
 import math
 import os
 import random
-import re
 import sys
 import threading
 import time
@@ -160,7 +159,13 @@ def comfyui_submit_prompt(workflow: dict) -> str:
     """Submit workflow to ComfyUI. Returns prompt_id."""
     payload = {"prompt": workflow, "client_id": comfyui_client_id}
     resp = http_requests.post(f"{comfyui_url}/prompt", json=payload)
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        try:
+            err_detail = resp.json()
+        except Exception:
+            err_detail = resp.text[:2000]
+        print(f"[error] ComfyUI /prompt returned {resp.status_code}: {json.dumps(err_detail, indent=2, ensure_ascii=False)}", file=sys.stderr)
+        resp.raise_for_status()
     result = resp.json()
 
     if "error" in result:
@@ -1205,81 +1210,19 @@ def delete_drawing(drawing_id):
 
 
 # =======================
-# HTML Template — loaded from app_aio.py at runtime to avoid 1900-line duplication
+# HTML Template — loaded from app_comfyui_template.html
 # =======================
-def _load_html_template() -> str:
-    """Load HTML template from app_aio.py source and adapt title for ComfyUI."""
-    aio_path = Path(__file__).parent / "app_aio.py"
-    if not aio_path.exists():
-        return (
-            "<!DOCTYPE html><html><body>"
-            "<h1>Error: app_aio.py not found (required for HTML template)</h1>"
-            "</body></html>"
-        )
-
-    src = aio_path.read_text(encoding="utf-8")
-    match = re.search(r'HTML_TEMPLATE\s*=\s*r"""(.*?)"""', src, re.DOTALL)
-    if not match:
-        return (
-            "<!DOCTYPE html><html><body>"
-            "<h1>Error: HTML_TEMPLATE not found in app_aio.py</h1>"
-            "</body></html>"
-        )
-
-    template = match.group(1)
-    template = template.replace("Qwen Image Edit Server (AIO)", "Qwen Image Edit Server (ComfyUI)")
-
-    # Inject preview image CSS
-    preview_css = """
-    .preview-area { text-align: center; margin-top: 8px; }
-    .preview-area img { max-width: 100%; max-height: 400px; border: 2px dashed #666; border-radius: 6px; opacity: 0.85; }
-    """
-    template = template.replace("</style>", preview_css + "</style>")
-
-    # Inject preview checkbox after continuous mode checkbox
-    template = template.replace(
-        'Continuous mode (auto-set result to Img1)</label>\n    </div>',
-        'Continuous mode (auto-set result to Img1)</label>\n    </div>\n'
-        '    <div class="checkbox-row">\n'
-        '      <input type="checkbox" id="showPreview" checked>\n'
-        '      <label for="showPreview">Show preview during generation</label>\n'
-        '    </div>'
+_TEMPLATE_PATH = Path(__file__).parent / "app_comfyui_template.html"
+try:
+    HTML_TEMPLATE = _TEMPLATE_PATH.read_text(encoding="utf-8")
+    print(f"[info] HTML template loaded: {_TEMPLATE_PATH}", file=sys.stderr)
+except FileNotFoundError:
+    print(f"[error] HTML template not found: {_TEMPLATE_PATH}", file=sys.stderr)
+    HTML_TEMPLATE = (
+        "<!DOCTYPE html><html><body>"
+        "<h1>Error: app_comfyui_template.html not found</h1>"
+        "</body></html>"
     )
-
-    # Inject preview container after progress bar
-    template = template.replace(
-        '<div class="result-area" id="resultArea"></div>',
-        '<div class="preview-area" id="previewArea"></div>\n'
-        '    <div class="result-area" id="resultArea"></div>'
-    )
-
-    # Inject preview image update in JS: during processing, fetch and show preview
-    template = template.replace(
-        "progressBar.style.width = `${Math.round((step / total) * 100)}%`;",
-        "progressBar.style.width = `${Math.round((step / total) * 100)}%`;\n"
-        "          if (sd.has_preview && document.getElementById('showPreview').checked) {\n"
-        "            const pvUrl = `/api/preview/${jobId}?t=${Date.now()}`;\n"
-        "            const pvArea = document.getElementById('previewArea');\n"
-        "            if (!pvArea.querySelector('img')) pvArea.innerHTML = '<img alt=\"preview\">';\n"
-        "            pvArea.querySelector('img').src = pvUrl;\n"
-        "          }"
-    )
-
-    # Clear preview on done/cancelled/error
-    for marker in [
-        "statusText.textContent = 'Done!';",
-        "statusText.textContent = 'Cancelled';",
-        "statusText.textContent = 'Error: ' + (sd.error || 'unknown');",
-    ]:
-        template = template.replace(
-            marker,
-            marker + "\n          document.getElementById('previewArea').innerHTML = '';"
-        )
-
-    return template
-
-
-HTML_TEMPLATE = _load_html_template()
 
 
 # =======================
