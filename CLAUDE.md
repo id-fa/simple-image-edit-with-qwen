@@ -242,8 +242,8 @@ python app_comfyui.py --preset "高画質化::Enhance quality." --preset "テキ
 - `--offload` (AIO only) - Sequential CPU offload for low VRAM
 - `--comfyui-url URL` (ComfyUI only) - ComfyUI API URL (default: `http://127.0.0.1:8188`)
 - `--comfyui-path DIR` (ComfyUI only) - ComfyUI installation directory. Auto-registers `server/LoRA/` in `extra_model_paths.yaml` and reboots ComfyUI via Manager API if needed
-- `--steps N` (ComfyUI only) - Inference steps (default: 40)
-- `--cfg N` (ComfyUI only) - CFG scale (default: 4.0)
+- `--steps N` (ComfyUI only) - Inference steps (default: 8)
+- `--cfg N` (ComfyUI only) - CFG scale (default: 1.0)
 
 **Note:** GGUF server does NOT support `--offload` (sequential CPU offload is incompatible with GGUF tensors). Only default (`enable_model_cpu_offload`) and `--no-offload` are available.
 

@@ -58,8 +58,8 @@ PROMPT_DEFAULT = (
     "Preserve the original composition, character identity, pose, and costume exactly."
 )
 
-DEFAULT_STEPS = 40
-DEFAULT_CFG = 4.0
+DEFAULT_STEPS = 8
+DEFAULT_CFG = 1.0
 
 MAX_W = 2048
 MAX_H = 2048
