@@ -19,12 +19,16 @@ Python scripts for AI-powered image editing using diffusion models:
 8. **server/app_nunchaku.py** - Flask web server for Nunchaku Qwen-Image-Edit-2509 Lightning
 9. **server/app_gguf.py** - Flask web server for GGUF quantized Qwen-Image-Edit-Rapid-AIO-V23
 10. **server/app_aio.py** - Flask web server for Qwen-Image-Edit-Rapid-AIO-V23 (no GGUF/nunchaku dependency)
+11. **server/app_comfyui.py** - Flask web server using ComfyUI API backend (no torch/diffusers dependency)
 
 ### Google Colab Notebooks (`notebooks/`)
-11. **notebooks/colab_app_gguf.ipynb** - Google Colab notebook for GGUF web server (cloudflared tunnel, A100 recommended)
+12. **notebooks/colab_app_gguf.ipynb** - Google Colab notebook for GGUF web server (cloudflared tunnel, A100 recommended)
 
 ### Utilities
-12. **server/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
+13. **server/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
+
+### Workflow Templates (`server/comfyui_workflow/`)
+14. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_api.json** - ComfyUI API format workflow for Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui.py)
 
 Image editing scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All image scripts support `--t2i` mode for text-to-image generation. The video script (`simple_i2v_ltx2_distilled.py`) supports i2v (image-to-video), flf2v (first+last frame to video via `--ref`), and t2v (text-to-video via `--t2i`). Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
@@ -32,7 +36,7 @@ Web servers provide browser GUI with password protection, job queue (1 processin
 
 **Target Environment:** GeForce RTX 3xxx (VRAM 12GB) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
-**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein/LTX-2 cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`). Rapid Qwen, FLUX.2 Klein, and LTX-2 can share the same venv (latest diffusers).
+**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein/LTX-2 cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`). Rapid Qwen, FLUX.2 Klein, and LTX-2 can share the same venv (latest diffusers). ComfyUI server (`app_comfyui.py`) has no torch/diffusers dependency and uses its own lightweight venv.
 
 ## Running the Scripts
 
@@ -169,6 +173,18 @@ python app_aio.py --lora "path/to/lora.safetensors" --lora "another.safetensors"
 python app_aio.py --gallery --password mysecret
 ```
 
+### ComfyUI Web Server (API backend)
+```powershell
+cd server
+python app_comfyui.py
+python app_comfyui.py --password mysecret --port 5000
+python app_comfyui.py --comfyui-url http://192.168.1.100:8188
+python app_comfyui.py --comfyui-path D:\ComfyUI          # auto-register LoRA path + reboot ComfyUI
+python app_comfyui.py --steps 4 --cfg 1.0
+python app_comfyui.py --gallery --password mysecret
+python app_comfyui.py --preset "高画質化::Enhance quality." --preset "テキスト除去::Remove all text."
+```
+
 ### Web Server Common Options
 - `--host HOST` - Bind host (default: 127.0.0.1)
 - `--port PORT` - Bind port (default: 5000)
@@ -192,6 +208,7 @@ python app_aio.py --gallery --password mysecret
 - Prompt translation (googletrans): `Translate:` label with `-> EN` / `-> ZH` / `-> JA` buttons
 - File input clear buttons (x) for resetting image selections, drag-and-drop image upload
 - Continuous mode: Checkbox to auto-set generation result as Img1 for iterative editing. Result area also shows Img1/Img2 radio buttons for immediate reuse without waiting for gallery refresh
+- Preview during generation (ComfyUI only): Checkbox to show/hide real-time preview images from ComfyUI's WebSocket binary frames. Requires ComfyUI preview method enabled (Settings → Preview Method). Preview image displayed below progress bar, cleared on completion
 - Polling safety: Auto-stops polling after 2 min with no response (timeout) or 3 consecutive auth errors
 - Multi-LoRA support: `--lora` repeatable, WebUI shows checkboxes + strength sliders (0.0-2.0, default unchecked). Selected LoRAs applied dynamically per generation. Nunchaku: pipeline reloads when LoRA config changes (CUDA kernels cache buffers, no runtime toggle). AIO/GGUF: `set_adapters()` for instant switching. Incompatible LoRAs are skipped gracefully (no crash)
 - Model info display: pipeline, transformer, text encoder class, tokenizer, VAE class, dtype, LoRA
@@ -223,10 +240,16 @@ python app_aio.py --gallery --password mysecret
 - `--gguf-file PATH` (GGUF only) - GGUF file within HF repo (default: `v23/Qwen-Rapid-NSFW-v23_Q3_K.gguf`)
 - `--gguf-local PATH` (GGUF only) - Use local GGUF file directly
 - `--offload` (AIO only) - Sequential CPU offload for low VRAM
+- `--comfyui-url URL` (ComfyUI only) - ComfyUI API URL (default: `http://127.0.0.1:8188`)
+- `--comfyui-path DIR` (ComfyUI only) - ComfyUI installation directory. Auto-registers `server/LoRA/` in `extra_model_paths.yaml` and reboots ComfyUI via Manager API if needed
+- `--steps N` (ComfyUI only) - Inference steps (default: 40)
+- `--cfg N` (ComfyUI only) - CFG scale (default: 4.0)
 
 **Note:** GGUF server does NOT support `--offload` (sequential CPU offload is incompatible with GGUF tensors). Only default (`enable_model_cpu_offload`) and `--no-offload` are available.
 
 **Note:** AIO server requires significantly more VRAM than GGUF (full bf16 transformer). On Google Colab, use GGUF version instead (A100 recommended).
+
+**Note:** ComfyUI server requires a running ComfyUI instance. No torch/diffusers dependency — only flask, requests, pillow, websocket-client. Requires ComfyUI with `Qwen-Rapid-AIO-NSFW-v23.safetensors`, `qwen2.5-vl-7b-instruct-abliterated.safetensors`, and `qwen_image_vae.safetensors` models. LoRA files in `server/LoRA/` must be in ComfyUI's search path (use `--comfyui-path` for auto-registration). HTML template is loaded from `app_aio.py` at runtime.
 
 ## Environment Setup
 
@@ -270,6 +293,15 @@ pip install -U pip pillow ltx-core ltx-pipelines
 - `ltx-2-19b-distilled-fp8.safetensors` (checkpoint)
 - `ltx-2-spatial-upscaler-x2-1.0.safetensors` (upsampler)
 - Gemma 3 text encoder (e.g. `google/gemma-3-4b-it`)
+
+### venv for ComfyUI server (no torch/diffusers needed)
+```powershell
+py -3.11 -m venv .venv-comfyui
+.\.venv-comfyui\Scripts\activate
+pip install flask requests pillow websocket-client googletrans==4.0.0rc1
+```
+
+**Note:** ComfyUI server delegates all inference to a running ComfyUI instance via API. Requires ComfyUI with `Qwen-Rapid-AIO-NSFW-v23.safetensors`, `qwen2.5-vl-7b-instruct-abliterated.safetensors`, and `qwen_image_vae.safetensors` models. ComfyUI-Manager extension enables auto-reboot for LoRA path registration.
 
 ## Architecture
 
@@ -346,6 +378,22 @@ All scripts share this preprocessing flow:
 **Z-Image Turbo** (archived):
 - 4bit quantization via bitsandbytes (unsloth model)
 - `--offload` enables CPU offloading
+
+**ComfyUI API Backend** (`server/app_comfyui.py`):
+- No torch/diffusers dependency — delegates inference to running ComfyUI instance
+- Workflow template loaded from `server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_api.json`
+- Workflow node IDs centralized in `WF_NODE` dict for easy remapping when workflow is re-exported
+- Images uploaded to ComfyUI via `POST /upload/image`, workflow submitted via `POST /prompt`
+- Progress tracking via WebSocket (`websocket-client`); binary frames parsed for preview images, falls back to polling if not installed
+- Preview images: ComfyUI binary WebSocket frames (8-byte header + JPEG/PNG) displayed during generation via `/api/preview/<job_id>`. Togglable via "Show preview during generation" checkbox
+- Cancel via `POST /interrupt` on ComfyUI API
+- Result retrieved from `GET /history/{prompt_id}` → `GET /view`
+- Pre-resize: `ImageScaleToTotalPixels` nodes in workflow, megapixels set from pre-resize selection (0.3M/1M), `resolution_steps=16` for model alignment
+- LoRA: scans `server/LoRA/` folder, matches against ComfyUI's known LoRAs via `/object_info/LoraLoaderModelOnly`. Workflow has 3 `LoraLoaderModelOnly` slots chained (UNETLoader → slot1 → slot2 → slot3 → ModelSamplingAuraFlow); unused slots are removed from workflow and chain is rewired
+- `--comfyui-path`: auto-registers LoRA path in `extra_model_paths.yaml` and reboots ComfyUI via Manager API (`GET /manager/reboot`)
+- Steps/CFG: set directly on KSampler node
+- HTML template: loaded from `app_aio.py` source at runtime via regex extraction (avoids 1900-line duplication), with ComfyUI-specific UI injected (preview checkbox, preview area)
+- Startup checks: ComfyUI connectivity, required model availability (UNET/CLIP/VAE), LoRA path registration
 
 ### Configurable Parameters
 
@@ -438,6 +486,11 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | `LTX2ConditionPipeline` not found | Need latest diffusers: `pip install -U git+https://github.com/huggingface/diffusers` |
 | LTX-2 CUDA OOM | Use `--no-stage2`, `--num-frames 61`, `--size 512x320`, or `--offload` |
 | LTX-2 + Qwen venv conflict | LTX-2 requires latest diffusers (same venv as FLUX.2 Klein / Rapid Qwen) |
+| ComfyUI connection refused | Ensure ComfyUI is running at the URL specified by `--comfyui-url` |
+| ComfyUI model not found | Place model files in ComfyUI's `models/` directory or configure `extra_model_paths.yaml` |
+| ComfyUI LoRA not recognized | Use `--comfyui-path` to auto-register `server/LoRA/` in `extra_model_paths.yaml` (triggers ComfyUI reboot) |
+| ComfyUI reboot fails | Install ComfyUI-Manager extension for API reboot support (`GET /manager/reboot`) |
+| ComfyUI no progress updates | Install `websocket-client`: `pip install websocket-client` |
 
 ## Cache Management
 
