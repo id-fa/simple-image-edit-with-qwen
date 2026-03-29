@@ -476,7 +476,7 @@ def build_workflow(image1_name: str, image2_name: str | None, prompt: str,
 
     Args:
         loras: list of {"comfyui_name": str, "scale": float} (max 10)
-        pre_resize: target total pixels (e.g. 300000, 1000000) for ImageScaleToTotalPixels
+        pre_resize: target total pixels (e.g. 1000000, 2000000) for ImageScaleToTotalPixels
     """
     N = WF_NODE  # shorthand
     wf = copy.deepcopy(WORKFLOW_TEMPLATE)
@@ -775,9 +775,9 @@ def submit():
     prompt = request.form.get("prompt", "").strip() or PROMPT_DEFAULT
     seed_str = request.form.get("seed", "").strip()
     seed = int(seed_str) if seed_str else None
-    pre_resize_str = request.form.get("pre_resize", "0.3m")
-    pre_resize_map = {"0.3m": 300_000, "1m": 1_000_000}
-    pre_resize = pre_resize_map.get(pre_resize_str, 300_000)
+    pre_resize_str = request.form.get("pre_resize", "1m")
+    pre_resize_map = {"1m": 1_000_000, "2m": 2_000_000}
+    pre_resize = pre_resize_map.get(pre_resize_str, 1_000_000)
 
     job_id = uuid.uuid4().hex[:12]
     input_paths = []

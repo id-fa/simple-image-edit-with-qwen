@@ -215,7 +215,7 @@ python app_comfyui_nunchaku.py --preset "高画質化::Enhance quality." --prese
 - Real-time step progress via polling (`callback_on_step_end`)
 - Cancel running jobs (`pipeline._interrupt`)
 - Auto-cleanup: files older than 1 hour removed every 5 minutes
-- Pre-resize: 0.3M or 1M pixels
+- Pre-resize: 0.3M or 1M pixels (diffusers servers), 1M or 2M pixels (ComfyUI servers)
 - t2i mode: 1024x1024 fixed size
 - Prompt presets (`--preset`): Configurable buttons above prompt textarea. Click to fill prompt with preset text. Confirmation dialog when replacing non-empty prompt
 - Prompt clear button (x) next to label for clearing prompt text
@@ -402,7 +402,7 @@ All scripts share this preprocessing flow:
 - Preview images: ComfyUI binary WebSocket frames (8-byte header + JPEG/PNG) displayed during generation via `/api/preview/<job_id>`. Togglable via "Show preview during generation" checkbox
 - Cancel via `POST /interrupt` on ComfyUI API
 - Result retrieved from `GET /history/{prompt_id}` → `GET /view`
-- Pre-resize: `ImageScaleToTotalPixels` nodes in workflow, megapixels set from pre-resize selection (0.3M/1M), `resolution_steps=16` for model alignment
+- Pre-resize: `ImageScaleToTotalPixels` nodes in workflow, megapixels set from pre-resize selection (1M/2M), `resolution_steps=16` for model alignment
 - LoRA: scans `server/LoRA/` folder, matches against ComfyUI's known LoRAs via `/object_info/LoraLoaderModelOnly`. Workflow has 3 `LoraLoaderModelOnly` slots chained (UNETLoader → slot1 → slot2 → slot3 → ModelSamplingAuraFlow); unused slots are removed from workflow and chain is rewired
 - `--comfyui-path`: auto-registers LoRA path in `extra_model_paths.yaml` and reboots ComfyUI via Manager API (`GET /manager/reboot`)
 - Steps/CFG: set directly on KSampler node
@@ -414,7 +414,7 @@ All scripts share this preprocessing flow:
 - Workflow template loaded from `server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_api.json`
 - `ImageScaleToTotalPixels` for both img1 (93) and img2 (138)
 - Prompt set directly on `TextEncodeQwenImageEditPlus` nodes (no separate prompt text node)
-- LoRA: via `NunchakuQwenImageLoraStackV3` custom node — `lora_count` + `enabled_N`/`lora_name_N`/`lora_strength_N` (dynamic slots). Scans `server/LoRA/` and matches against ComfyUI's known LoRAs via `/object_info/NunchakuQwenImageLoraStackV3`
+- LoRA: via `NunchakuQwenImageLoraStackV3` custom node — `lora_count` + `enabled_N`/`lora_name_N`/`lora_strength_N` (dynamic slots). Scans `server/LoRA/` folder directly (files registered by filename, expected in ComfyUI's search path via `extra_model_paths.yaml`)
 - No UNETLoader (nunchaku model loaded by `NunchakuQwenImageDiTLoader` node 133)
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (Nunchaku/CLIP/VAE), NunchakuQwenImageLoraStackV3 node availability
 - Shares `app_comfyui_template.html` with AIO variant
