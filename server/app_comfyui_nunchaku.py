@@ -224,13 +224,6 @@ def comfyui_get_available_models() -> dict:
         info["nunchaku_models"] = data["NunchakuQwenImageDiTLoader"]["input"]["required"]["model_name"][0]
     except Exception:
         info["nunchaku_models"] = []
-    # NunchakuQwenImageLoraStackV3 LoRA names
-    try:
-        resp = http_requests.get(f"{comfyui_url}/object_info/NunchakuQwenImageLoraStackV3", timeout=10)
-        data = resp.json()
-        info["lora_models"] = data["NunchakuQwenImageLoraStackV3"]["input"]["required"]["lora_name_1"][0]
-    except Exception:
-        info["lora_models"] = []
     return info
 
 
@@ -447,8 +440,12 @@ def reboot_comfyui_and_wait(timeout: float = 120) -> bool:
 # =======================
 # LoRA scanning
 # =======================
-def scan_lora_folder(comfyui_lora_names: list[str]) -> list[dict]:
-    """Scan server/LoRA/ folder and match with ComfyUI's known LoRAs."""
+def scan_lora_folder() -> list[dict]:
+    """Scan server/LoRA/ folder and register all LoRA files.
+
+    Files are registered by filename directly — the LoRA directory is
+    expected to be in ComfyUI's search path via extra_model_paths.yaml.
+    """
     if not LORA_DIR.is_dir():
         print(f"[info] LoRA directory not found: {LORA_DIR}", file=sys.stderr)
         return []
@@ -458,24 +455,13 @@ def scan_lora_folder(comfyui_lora_names: list[str]) -> list[dict]:
         if f.suffix.lower() not in (".safetensors", ".ckpt", ".pt"):
             continue
 
-        comfyui_name = None
-        for cn in comfyui_lora_names:
-            cn_base = cn.replace("\\", "/").split("/")[-1]
-            if cn_base == f.name or cn == f.name:
-                comfyui_name = cn
-                break
-
-        if comfyui_name:
-            registry.append({
-                "name": f.stem,
-                "comfyui_name": comfyui_name,
-                "local_path": str(f),
-                "default_scale": 1.0,
-            })
-            print(f"[info] LoRA found: {f.stem} -> {comfyui_name}", file=sys.stderr)
-        else:
-            print(f"[warn] LoRA not recognized by ComfyUI: {f.name}", file=sys.stderr)
-            print(f"[warn]   -> Add LoRA directory to ComfyUI extra_model_paths.yaml", file=sys.stderr)
+        registry.append({
+            "name": f.stem,
+            "comfyui_name": f.name,
+            "local_path": str(f),
+            "default_scale": 1.0,
+        })
+        print(f"[info] LoRA found: {f.name}", file=sys.stderr)
 
     return registry
 
@@ -1346,12 +1332,13 @@ def main():
             print("[warn] Restart ComfyUI manually and re-run this server.", file=sys.stderr)
 
     # Scan LoRA folder
-    lora_registry.extend(scan_lora_folder(available.get("lora_models", [])))
+    lora_registry.extend(scan_lora_folder())
     if lora_registry:
         print(f"[info] {len(lora_registry)} LoRA(s) available", file=sys.stderr)
 
     # Build model info for UI
     model_info["pipeline"] = f"ComfyUI Nunchaku ({comfyui_url})"
+    model_info["transformer"] = Path(nunchaku_model_name).stem if nunchaku_model_name else "unknown"
     model_info["text_encoder_class"] = clip_name
     model_info["vae_class"] = vae_name
     model_info["steps"] = f"{configured_steps} (CFG: {configured_cfg})"
