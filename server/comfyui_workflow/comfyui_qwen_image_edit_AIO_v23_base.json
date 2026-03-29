@@ -25,7 +25,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "## Model links\n\n**Diffusion model**\n\n- [qwen_image_edit_2509_fp8_e4m3fn.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI/resolve/main/split_files/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors)\n\n**LoRA**\n\n- [Qwen-Rapid-AIO-NSFW-v23.safetensors](https://huggingface.co/Phr00t/Qwen-Image-Edit-Rapid-AIO/resolve/main/v23/Qwen-Rapid-AIO-NSFW-v23.safetensors)\n\n**Text encoder**\n\n- [qwen2.5-vl-7b-instruct-abliterated.safetensors](https://huggingface.co/wangkanai/qwen2.5-vl-7b-instruct/resolve/main/qwen2.5-vl-7b-instruct-abliterated.safetensors)\n\n**VAE**\n\n- [qwen_image_vae.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors)\n\nModel Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 diffusion_models/\n│   │   └── Qwen-Rapid-AIO-NSFW-v23.safetensors\n│   ├── 📂 vae/\n│   │   └── qwen_image_vae.safetensors\n│   └── 📂 text_encoders/\n│       └── qwen2.5-vl-7b-instruct-abliterated.safetensors\n```"
+        "## Model links\n\n**Diffusion model**\n\n- [Qwen-Rapid-AIO-NSFW-v23.safetensors](https://huggingface.co/Phr00t/Qwen-Image-Edit-Rapid-AIO/resolve/main/v23/Qwen-Rapid-AIO-NSFW-v23.safetensors)\n\n**Text encoder**\n\n- [qwen_2.5_vl_7b_fp8_scaled.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors)\n\n**VAE**\n\n- [qwen_image_vae.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors)\n\nModel Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 diffusion_models/\n│   │   └── Qwen-Rapid-AIO-NSFW-v23.safetensors\n│   ├── 📂 vae/\n│   │   └── qwen_image_vae.safetensors\n│   └── 📂 text_encoders/\n│       └── qwen_2.5_vl_7b_fp8_scaled.safetensors\n```"
       ],
       "color": "#432",
       "bgcolor": "#000"
@@ -896,8 +896,8 @@
         "Node name for S&R": "CLIPLoader",
         "models": [
           {
-            "name": "qwen2.5-vl-7b-instruct-abliterated.safetensors",
-            "url": "https://huggingface.co/wangkanai/qwen2.5-vl-7b-instruct/resolve/main/qwen2.5-vl-7b-instruct-abliterated.safetensors",
+            "name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+            "url": "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
             "directory": "text_encoders"
           }
         ],
@@ -911,7 +911,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "qwen2.5-vl-7b-instruct-abliterated.safetensors",
+        "qwen_2.5_vl_7b_fp8_scaled.safetensors",
         "qwen_image",
         "default"
       ]

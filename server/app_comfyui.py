@@ -1267,15 +1267,25 @@ def main():
 
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Check ComfyUI connectivity
+    # Check ComfyUI connectivity (retry once after 60s)
     print(f"[info] connecting to ComfyUI: {comfyui_url}", file=sys.stderr)
-    try:
-        resp = http_requests.get(f"{comfyui_url}/system_stats", timeout=10)
-        resp.raise_for_status()
-        print("[info] ComfyUI connection OK", file=sys.stderr)
-    except Exception as ex:
-        print(f"[error] Cannot connect to ComfyUI at {comfyui_url}: {ex}", file=sys.stderr)
-        print("[error] Make sure ComfyUI is running.", file=sys.stderr)
+    comfyui_connected = False
+    for attempt in range(2):
+        try:
+            resp = http_requests.get(f"{comfyui_url}/system_stats", timeout=10)
+            resp.raise_for_status()
+            print("[info] ComfyUI connection OK", file=sys.stderr)
+            comfyui_connected = True
+            break
+        except Exception as ex:
+            if attempt == 0:
+                print(f"[warn] Cannot connect to ComfyUI: {ex}", file=sys.stderr)
+                print("[info] Retrying in 60 seconds...", file=sys.stderr)
+                time.sleep(60)
+            else:
+                print(f"[error] Cannot connect to ComfyUI at {comfyui_url}: {ex}", file=sys.stderr)
+                print("[error] Make sure ComfyUI is running.", file=sys.stderr)
+    if not comfyui_connected:
         sys.exit(1)
 
     # Check required models
@@ -1286,18 +1296,34 @@ def main():
     clip_name = WORKFLOW_TEMPLATE.get(WF_NODE["clip_loader"], {}).get("inputs", {}).get("clip_name", "")
     vae_name = WORKFLOW_TEMPLATE.get(WF_NODE["vae_loader"], {}).get("inputs", {}).get("vae_name", "")
 
+    # Download URLs for missing models
+    model_download_urls = {
+        "unet_models": [
+            "https://huggingface.co/Phr00t/Qwen-Image-Edit-Rapid-AIO/resolve/main/v23/Qwen-Rapid-AIO-NSFW-v23.safetensors",
+        ],
+        "clip_models": [
+            "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        ],
+        "vae_models": [
+            "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors",
+        ],
+    }
+
     missing = []
     if unet_name and unet_name not in available.get("unet_models", []):
-        missing.append(f"UNET: {unet_name}")
+        missing.append(("UNET", unet_name, "unet_models"))
     if clip_name and clip_name not in available.get("clip_models", []):
-        missing.append(f"CLIP: {clip_name}")
+        missing.append(("CLIP", clip_name, "clip_models"))
     if vae_name and vae_name not in available.get("vae_models", []):
-        missing.append(f"VAE: {vae_name}")
+        missing.append(("VAE", vae_name, "vae_models"))
 
     if missing:
         print("[error] Required models not found in ComfyUI:", file=sys.stderr)
-        for m in missing:
-            print(f"  - {m}", file=sys.stderr)
+        for label, name, model_type in missing:
+            print(f"  - {label}: {name}", file=sys.stderr)
+            urls = model_download_urls.get(model_type, [])
+            for url in urls:
+                print(f"    Download: {url}", file=sys.stderr)
         print("[error] Place model files in ComfyUI's models directory.", file=sys.stderr)
         sys.exit(1)
     else:
