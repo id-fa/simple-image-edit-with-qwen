@@ -152,7 +152,7 @@
   },
   "445": {
     "inputs": {
-      "lora_name": "gnass_2512_qwen.safetensors",
+      "lora_name": null,
       "strength_model": 1,
       "model": [
         "456",
@@ -235,7 +235,7 @@
   },
   "451": {
     "inputs": {
-      "lora_name": "",
+      "lora_name": null,
       "strength_model": 1,
       "model": [
         "445",
@@ -249,7 +249,7 @@
   },
   "452": {
     "inputs": {
-      "lora_name": "",
+      "lora_name": null,
       "strength_model": 1,
       "model": [
         "451",
