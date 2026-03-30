@@ -14,7 +14,7 @@
   },
   "78": {
     "inputs": {
-      "image": "input_image.png"
+      "image": "example.png"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -56,7 +56,7 @@
     "inputs": {
       "prompt": "",
       "clip": [
-        "454",
+        "455",
         0
       ],
       "vae": [
@@ -97,7 +97,7 @@
         0
       ],
       "clip": [
-        "454",
+        "455",
         0
       ],
       "vae": [
@@ -155,7 +155,7 @@
       "lora_name": "gnass_2512_qwen.safetensors",
       "strength_model": 1,
       "model": [
-        "453",
+        "456",
         0
       ]
     },
@@ -196,7 +196,7 @@
   },
   "448": {
     "inputs": {
-      "image": "input_image.png"
+      "image": "example.png"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -261,24 +261,23 @@
       "title": "LoRAローダーモデルのみ"
     }
   },
-  "453": {
-    "inputs": {
-      "gguf_name": "Qwen-Rapid-NSFW-v23_Q6_K.gguf"
-    },
-    "class_type": "LoaderGGUF",
-    "_meta": {
-      "title": "GGUF Loader"
-    }
-  },
-  "454": {
+  "455": {
     "inputs": {
       "clip_name": "Qwen2.5-VL-7B-Instruct-heretic.Q6_K.gguf",
-      "type": "qwen_image",
-      "device": "default"
+      "type": "qwen_image"
     },
-    "class_type": "ClipLoaderGGUF",
+    "class_type": "CLIPLoaderGGUF",
     "_meta": {
-      "title": "GGUF CLIP Loader"
+      "title": "CLIPLoader (GGUF)"
+    }
+  },
+  "456": {
+    "inputs": {
+      "unet_name": "Qwen-Rapid-NSFW-v23_Q6_K.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
     }
   }
 }

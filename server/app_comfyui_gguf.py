@@ -98,8 +98,8 @@ WF_NODE = {
     "image_scale1":     "449",       # ImageScaleToTotalPixels - img1
     "image_scale2":     "450",       # ImageScaleToTotalPixels - img2
     "prompt_text":      "435",       # PrimitiveStringMultiline - Prompt
-    "gguf_loader":      "453",       # LoaderGGUF - GGUF model
-    "clip_loader_gguf": "454",       # ClipLoaderGGUF - GGUF CLIP
+    "gguf_loader":      "456",       # UnetLoaderGGUF - GGUF model
+    "clip_loader_gguf": "455",       # CLIPLoaderGGUF - GGUF CLIP
     "vae_loader":       "437",       # VAELoader
     "vae_encode":       "443",       # VAEEncode
     "vae_decode":       "444",       # VAEDecode
@@ -207,8 +207,8 @@ def comfyui_get_available_models() -> dict:
     """Query ComfyUI for available models."""
     info: dict[str, list] = {}
     for node_class, key, field in [
-        ("LoaderGGUF", "gguf_models", "gguf_name"),
-        ("ClipLoaderGGUF", "clip_gguf_models", "clip_name"),
+        ("UnetLoaderGGUF", "gguf_models", "unet_name"),
+        ("CLIPLoaderGGUF", "clip_gguf_models", "clip_name"),
         ("VAELoader", "vae_models", "vae_name"),
         ("LoraLoaderModelOnly", "lora_models", "lora_name"),
     ]:
@@ -512,13 +512,13 @@ def build_workflow(image1_name: str, image2_name: str | None, prompt: str,
     wf[N["ksampler"]]["inputs"]["cfg"] = configured_cfg
 
     # LoRA handling (3 slots in workflow: lora_loader1 -> lora_loader2 -> lora_loader3)
-    # Chain: LoaderGGUF(453) -> 445 -> 451 -> 452 -> ModelSamplingAuraFlow(441)
+    # Chain: UnetLoaderGGUF(456) -> 445 -> 451 -> 452 -> ModelSamplingAuraFlow(441)
     # Unused nodes are removed and the model chain is rewired.
     active_loras = [l for l in (loras or []) if abs(l.get("scale", 1.0)) > 1e-5]
     active_loras = active_loras[:3]  # max 3
 
     loader_keys = ["lora_loader1", "lora_loader2", "lora_loader3"]
-    last_model_source = [N["gguf_loader"], 0]  # default: direct from LoaderGGUF
+    last_model_source = [N["gguf_loader"], 0]  # default: direct from UnetLoaderGGUF
     for i, key in enumerate(loader_keys):
         if i < len(active_loras):
             wf[N[key]]["inputs"]["lora_name"] = active_loras[i]["comfyui_name"]
@@ -1277,7 +1277,7 @@ def main():
     print("[info] checking available models...", file=sys.stderr)
     available = comfyui_get_available_models()
 
-    gguf_name = WORKFLOW_TEMPLATE.get(WF_NODE["gguf_loader"], {}).get("inputs", {}).get("gguf_name", "")
+    gguf_name = WORKFLOW_TEMPLATE.get(WF_NODE["gguf_loader"], {}).get("inputs", {}).get("unet_name", "")
     clip_gguf_name = WORKFLOW_TEMPLATE.get(WF_NODE["clip_loader_gguf"], {}).get("inputs", {}).get("clip_name", "")
     vae_name = WORKFLOW_TEMPLATE.get(WF_NODE["vae_loader"], {}).get("inputs", {}).get("vae_name", "")
 
