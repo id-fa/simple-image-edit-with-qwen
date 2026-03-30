@@ -11,6 +11,7 @@ AI画像編集Webサーバーの機能説明と操作方法です。
 | **AIO** | `app_aio.py` | Qwen-Image-Edit-Rapid-AIO-V23 | bf16フル精度。VRAM多め必要 |
 | **ComfyUI (AIO)** | `app_comfyui.py` | ComfyUI API経由 (AIOワークフロー) | torch/diffusers不要。別途ComfyUI実行が必要 |
 | **ComfyUI (Nunchaku)** | `app_comfyui_nunchaku.py` | ComfyUI API経由 (Nunchakuワークフロー) | torch/diffusers不要。別途ComfyUI実行が必要 |
+| **ComfyUI (GGUF)** | `app_comfyui_gguf.py` | ComfyUI API経由 (GGUFワークフロー) | torch/diffusers不要。GGUF量子化モデル使用 |
 
 ## 起動方法
 
@@ -56,6 +57,12 @@ python app_comfyui_nunchaku.py
 python app_comfyui_nunchaku.py --password mysecret --port 5000
 python app_comfyui_nunchaku.py --comfyui-url http://192.168.1.100:8188
 python app_comfyui_nunchaku.py --comfyui-path D:\ComfyUI
+
+# ComfyUI (GGUFワークフロー)
+python app_comfyui_gguf.py
+python app_comfyui_gguf.py --password mysecret --port 5000
+python app_comfyui_gguf.py --comfyui-url http://192.168.1.100:8188
+python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
 ```
 
 ### 起動オプション一覧
@@ -89,7 +96,8 @@ python app_comfyui_nunchaku.py --comfyui-path D:\ComfyUI
 > **注意:** GGUFサーバーは `--offload` 非対応（GGUF tensorsと互換性なし）。
 > **注意:** AIOサーバーはGGUFより大幅にVRAMが必要（bf16フル精度）。
 > **注意:** ComfyUI版は別途ComfyUIの起動が必要です。起動時に接続を確認し、失敗すると60秒後にリトライします。
-> **注意:** ComfyUI (Nunchaku) 版は `NunchakuQwenImageLoraStackV3` カスタムノードのインストールが必要です。
+> **注意:** ComfyUI (Nunchaku) 版はNunchakuライブラリとカスタムノード `nunchaku-ai/ComfyUI-nunchaku`、`ussoewwin/ComfyUI-QwenImageLoraLoader` のインストールが必要です。
+> **注意:** ComfyUI (GGUF) 版はggufライブラリとカスタムノード `city96/ComfyUI-GGUF` のインストールが必要です。
 
 ---
 
@@ -198,6 +206,7 @@ python app_nunchaku.py --lora "lora1.safetensors" --lora "lora2.safetensors"
 | **AIO / GGUF** | `set_adapters()` で動的切り替え | 即時 |
 | **ComfyUI (AIO)** | ワークフロー内 `LoraLoaderModelOnly` ノード（最大3個） | ComfyUI依存 |
 | **ComfyUI (Nunchaku)** | `NunchakuQwenImageLoraStackV3` ノード（最大10個） | ComfyUI依存 |
+| **ComfyUI (GGUF)** | ワークフロー内 `LoraLoaderModelOnly` ノード（最大3個） | ComfyUI依存 |
 
 Nunchaku版では、LoRAの有効/無効や強度を変更すると、次の生成開始時にパイプラインが自動的にリロードされます。同じ構成のまま連続生成する場合はリロードは発生しません。
 
@@ -368,6 +377,7 @@ Feature overview and usage instructions for the AI image editing web server.
 | **AIO** | `app_aio.py` | Qwen-Image-Edit-Rapid-AIO-V23 | bf16 full precision. Requires more VRAM |
 | **ComfyUI (AIO)** | `app_comfyui.py` | Via ComfyUI API (AIO workflow) | No torch/diffusers dependency. Requires separate ComfyUI instance |
 | **ComfyUI (Nunchaku)** | `app_comfyui_nunchaku.py` | Via ComfyUI API (Nunchaku workflow) | No torch/diffusers dependency. Requires separate ComfyUI instance |
+| **ComfyUI (GGUF)** | `app_comfyui_gguf.py` | Via ComfyUI API (GGUF workflow) | No torch/diffusers dependency. Uses GGUF quantized models |
 
 ## Getting Started
 
@@ -412,6 +422,12 @@ python app_comfyui_nunchaku.py
 python app_comfyui_nunchaku.py --password mysecret --port 5000
 python app_comfyui_nunchaku.py --comfyui-url http://192.168.1.100:8188
 python app_comfyui_nunchaku.py --comfyui-path D:\ComfyUI
+
+# ComfyUI (GGUF workflow)
+python app_comfyui_gguf.py
+python app_comfyui_gguf.py --password mysecret --port 5000
+python app_comfyui_gguf.py --comfyui-url http://192.168.1.100:8188
+python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
 ```
 
 ### Startup Options
@@ -445,7 +461,8 @@ python app_comfyui_nunchaku.py --comfyui-path D:\ComfyUI
 > **Note:** The GGUF server does not support `--offload` (incompatible with GGUF tensors).
 > **Note:** The AIO server requires significantly more VRAM than GGUF (bf16 full precision).
 > **Note:** ComfyUI servers require a separate running ComfyUI instance. Connection is verified at startup with a 60-second retry.
-> **Note:** ComfyUI (Nunchaku) requires the `NunchakuQwenImageLoraStackV3` custom node installed in ComfyUI.
+> **Note:** ComfyUI (Nunchaku) requires the Nunchaku library and custom nodes `nunchaku-ai/ComfyUI-nunchaku` and `ussoewwin/ComfyUI-QwenImageLoraLoader`.
+> **Note:** ComfyUI (GGUF) requires the gguf library and custom node `city96/ComfyUI-GGUF`.
 
 ---
 
@@ -554,6 +571,7 @@ python app_nunchaku.py --lora "lora1.safetensors" --lora "lora2.safetensors"
 | **AIO / GGUF** | Dynamic switching via `set_adapters()` | Instant |
 | **ComfyUI (AIO)** | `LoraLoaderModelOnly` nodes in workflow (max 3) | ComfyUI dependent |
 | **ComfyUI (Nunchaku)** | `NunchakuQwenImageLoraStackV3` node (max 10) | ComfyUI dependent |
+| **ComfyUI (GGUF)** | `LoraLoaderModelOnly` nodes in workflow (max 3) | ComfyUI dependent |
 
 In the Nunchaku version, changing LoRA enable/disable or strength triggers an automatic pipeline reload before the next generation. Consecutive generations with the same config skip the reload.
 

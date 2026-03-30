@@ -21,16 +21,18 @@ Python scripts for AI-powered image editing using diffusion models:
 10. **server/app_aio.py** - Flask web server for Qwen-Image-Edit-Rapid-AIO-V23 (no GGUF/nunchaku dependency)
 11. **server/app_comfyui.py** - Flask web server using ComfyUI API backend for AIO workflow (no torch/diffusers dependency)
 12. **server/app_comfyui_nunchaku.py** - Flask web server using ComfyUI API backend for Nunchaku workflow (no torch/diffusers dependency)
+13. **server/app_comfyui_gguf.py** - Flask web server using ComfyUI API backend for GGUF workflow (no torch/diffusers dependency)
 
 ### Google Colab Notebooks (`notebooks/`)
-13. **notebooks/colab_app_gguf.ipynb** - Google Colab notebook for GGUF web server (cloudflared tunnel, A100 recommended)
+14. **notebooks/colab_app_gguf.ipynb** - Google Colab notebook for GGUF web server (cloudflared tunnel, A100 recommended)
 
 ### Utilities
-14. **server/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
+15. **server/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
 
 ### Workflow Templates (`server/comfyui_workflow/`)
-15. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_api.json** - ComfyUI API format workflow for Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui.py)
-16. **server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_api.json** - ComfyUI API format workflow for Nunchaku Qwen-Image-Edit-2509 Lightning (used by app_comfyui_nunchaku.py)
+16. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_api.json** - ComfyUI API format workflow for Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui.py)
+17. **server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_api.json** - ComfyUI API format workflow for Nunchaku Qwen-Image-Edit-2509 Lightning (used by app_comfyui_nunchaku.py)
+18. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_gguf_api.json** - ComfyUI API format workflow for GGUF Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui_gguf.py)
 
 Image editing scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All image scripts support `--t2i` mode for text-to-image generation. The video script (`simple_i2v_ltx2_distilled.py`) supports i2v (image-to-video), flf2v (first+last frame to video via `--ref`), and t2v (text-to-video via `--t2i`). Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
@@ -38,7 +40,7 @@ Web servers provide browser GUI with password protection, job queue (1 processin
 
 **Target Environment:** GeForce RTX 3xxx (VRAM 12GB) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
-**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein/LTX-2 cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`). Rapid Qwen, FLUX.2 Klein, and LTX-2 can share the same venv (latest diffusers). ComfyUI servers (`app_comfyui.py`, `app_comfyui_nunchaku.py`) have no torch/diffusers dependency and use their own lightweight venv.
+**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein/LTX-2 cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`). Rapid Qwen, FLUX.2 Klein, and LTX-2 can share the same venv (latest diffusers). ComfyUI servers (`app_comfyui.py`, `app_comfyui_nunchaku.py`, `app_comfyui_gguf.py`) have no torch/diffusers dependency and use their own lightweight venv.
 
 ## Running the Scripts
 
@@ -199,6 +201,18 @@ python app_comfyui_nunchaku.py --gallery --password mysecret
 python app_comfyui_nunchaku.py --preset "高画質化::Enhance quality." --preset "テキスト除去::Remove all text."
 ```
 
+### ComfyUI Web Server — GGUF workflow (API backend)
+```powershell
+cd server
+python app_comfyui_gguf.py
+python app_comfyui_gguf.py --password mysecret --port 5000
+python app_comfyui_gguf.py --comfyui-url http://192.168.1.100:8188
+python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
+python app_comfyui_gguf.py --steps 4 --cfg 1.0
+python app_comfyui_gguf.py --gallery --password mysecret
+python app_comfyui_gguf.py --preset "高画質化::Enhance quality." --preset "テキスト除去::Remove all text."
+```
+
 ### Web Server Common Options
 - `--host HOST` - Bind host (default: 127.0.0.1)
 - `--port PORT` - Bind port (default: 5000)
@@ -263,7 +277,7 @@ python app_comfyui_nunchaku.py --preset "高画質化::Enhance quality." --prese
 
 **Note:** AIO server requires significantly more VRAM than GGUF (full bf16 transformer). On Google Colab, use GGUF version instead (A100 recommended).
 
-**Note:** ComfyUI servers (`app_comfyui.py`, `app_comfyui_nunchaku.py`) require a running ComfyUI instance. No torch/diffusers dependency — only flask, requests, pillow, websocket-client. AIO variant requires `Qwen-Rapid-AIO-NSFW-v23.safetensors`, `qwen2.5-vl-7b-instruct-abliterated.safetensors`, and `qwen_image_vae.safetensors`. Nunchaku variant requires `qwen_2.5_vl_7b_fp8_scaled.safetensors`, `qwen_image_vae.safetensors`, and `NunchakuQwenImageLoraStackV3` custom node. LoRA files in `server/LoRA/` must be in ComfyUI's search path (use `--comfyui-path` for auto-registration).
+**Note:** ComfyUI servers (`app_comfyui.py`, `app_comfyui_nunchaku.py`, `app_comfyui_gguf.py`) require a running ComfyUI instance. No torch/diffusers dependency — only flask, requests, pillow, websocket-client. AIO variant requires `Qwen-Rapid-AIO-NSFW-v23.safetensors`, `qwen2.5-vl-7b-instruct-abliterated.safetensors`, and `qwen_image_vae.safetensors`. Nunchaku variant requires `qwen_2.5_vl_7b_fp8_scaled.safetensors`, `qwen_image_vae.safetensors`, and `NunchakuQwenImageLoraStackV3` custom node. GGUF variant requires `Qwen-Rapid-NSFW-v23_Q6_K.gguf` (LoaderGGUF), `Qwen2.5-VL-7B-Instruct-heretic.Q6_K.gguf` (ClipLoaderGGUF), and `qwen_image_vae.safetensors`. LoRA files in `server/LoRA/` must be in ComfyUI's search path (use `--comfyui-path` for auto-registration).
 
 ## Environment Setup
 
@@ -409,6 +423,14 @@ All scripts share this preprocessing flow:
 - HTML template: standalone `server/app_comfyui_template.html` (no app_aio.py dependency), includes ComfyUI-specific UI (preview checkbox, preview area)
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (UNET/CLIP/VAE), LoRA path registration
 
+**ComfyUI API Backend — GGUF** (`server/app_comfyui_gguf.py`):
+- Same architecture as AIO variant but for the GGUF workflow
+- Workflow template loaded from `server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_gguf_api.json`
+- Model loading: `LoaderGGUF` (GGUF transformer) + `ClipLoaderGGUF` (GGUF CLIP) instead of `UNETLoader`/`CLIPLoader`
+- LoRA: same 3-slot `LoraLoaderModelOnly` chain as AIO (LoaderGGUF → slot1 → slot2 → slot3 → ModelSamplingAuraFlow)
+- Startup checks: ComfyUI connectivity (60s retry), required model availability (GGUF/CLIP_GGUF/VAE), LoRA path registration
+- Shares `app_comfyui_template.html` with AIO/Nunchaku variants
+
 **ComfyUI API Backend — Nunchaku** (`server/app_comfyui_nunchaku.py`):
 - Same architecture as AIO variant but for the Nunchaku workflow
 - Workflow template loaded from `server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_api.json`
@@ -516,6 +538,7 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | ComfyUI reboot fails | Install ComfyUI-Manager extension for API reboot support (`GET /manager/reboot`) |
 | ComfyUI no progress updates | Install `websocket-client`: `pip install websocket-client` |
 | ComfyUI nunchaku node missing | Install `NunchakuQwenImageLoraStackV3` custom node in ComfyUI (required by `app_comfyui_nunchaku.py`) |
+| ComfyUI GGUF node missing | Install GGUF loader nodes (`LoaderGGUF`, `ClipLoaderGGUF`) in ComfyUI (required by `app_comfyui_gguf.py`) |
 
 ## Cache Management
 

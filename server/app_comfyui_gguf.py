@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Web server for Qwen-Image-Edit using ComfyUI API backend (Nunchaku workflow).
+Web server for Qwen-Image-Edit using ComfyUI API backend (GGUF workflow).
 Replaces diffusers pipeline with ComfyUI API calls.
 No torch/diffusers dependency — requires only flask, requests, pillow, websocket-client.
 
 Usage:
-  python app_comfyui_nunchaku.py
-  python app_comfyui_nunchaku.py --password mysecret --port 5000
-  python app_comfyui_nunchaku.py --comfyui-url http://192.168.1.100:8188
-  python app_comfyui_nunchaku.py --comfyui-path D:\\ComfyUI
-  python app_comfyui_nunchaku.py --gallery --password mysecret
-  python app_comfyui_nunchaku.py --steps 8 --cfg 1.0
+  python app_comfyui_gguf.py
+  python app_comfyui_gguf.py --password mysecret --port 5000
+  python app_comfyui_gguf.py --comfyui-url http://192.168.1.100:8188
+  python app_comfyui_gguf.py --comfyui-path D:\\ComfyUI   # auto-register LoRA path
+  python app_comfyui_gguf.py --gallery --password mysecret
+  python app_comfyui_gguf.py --steps 8 --cfg 1.0
 
 Requirements:
   pip install flask requests pillow websocket-client googletrans==4.0.0rc1
@@ -77,7 +77,7 @@ LORA_DIR = Path(__file__).parent / "LoRA"
 # =======================
 # Workflow template (loaded from file)
 # =======================
-_WORKFLOW_PATH = Path(__file__).parent / "comfyui_workflow" / "comfyui_qwen_image_edit_nunchaku_api.json"
+_WORKFLOW_PATH = Path(__file__).parent / "comfyui_workflow" / "comfyui_qwen_image_edit_AIO_v23_gguf_api.json"
 try:
     with open(_WORKFLOW_PATH, encoding="utf-8") as _f:
         WORKFLOW_TEMPLATE = json.load(_f)
@@ -94,26 +94,25 @@ except FileNotFoundError:
 # ----------------------------------------------------------
 WF_NODE = {
     "load_image1":      "78",        # LoadImage - main input
-    "load_image2":      "127",       # LoadImage - reference / image2
-    "image_scale1":     "93",        # ImageScaleToTotalPixels - img1
-    "image_scale2":     "138",       # ImageScaleToTotalPixels - img2
-    "clip_loader":      "38",        # CLIPLoader
-    "vae_loader":       "39",        # VAELoader
-    "vae_encode":       "88",        # VAEEncode
-    "vae_decode":       "8",         # VAEDecode
-    "text_neg":         "125",       # TextEncodeQwenImageEditPlus (negative)
-    "text_pos":         "126",       # TextEncodeQwenImageEditPlus (positive)
-    "model_sampling":   "66",        # ModelSamplingAuraFlow
-    "cfg_norm":         "75",        # CFGNorm
-    "nunchaku_model":   "133",       # NunchakuQwenImageDiTLoader
-    "nunchaku_lora":    "136",       # NunchakuQwenImageLoraStackV3
-    "ksampler":         "3",         # KSampler
+    "load_image2":      "448",       # LoadImage - reference / image2
+    "image_scale1":     "449",       # ImageScaleToTotalPixels - img1
+    "image_scale2":     "450",       # ImageScaleToTotalPixels - img2
+    "prompt_text":      "435",       # PrimitiveStringMultiline - Prompt
+    "gguf_loader":      "453",       # LoaderGGUF - GGUF model
+    "clip_loader_gguf": "454",       # ClipLoaderGGUF - GGUF CLIP
+    "vae_loader":       "437",       # VAELoader
+    "vae_encode":       "443",       # VAEEncode
+    "vae_decode":       "444",       # VAEDecode
+    "text_neg":         "440",       # TextEncodeQwenImageEditPlus (negative)
+    "text_pos":         "442",       # TextEncodeQwenImageEditPlus (positive)
+    "model_sampling":   "441",       # ModelSamplingAuraFlow
+    "cfg_norm":         "436",       # CFGNorm
+    "lora_loader1":     "445",       # LoraLoaderModelOnly (1st, model <- gguf_loader)
+    "lora_loader2":     "451",       # LoraLoaderModelOnly (2nd, model <- lora_loader1)
+    "lora_loader3":     "452",       # LoraLoaderModelOnly (3rd, model <- lora_loader2)
+    "ksampler":         "447",       # KSampler
     "save_image":       "60",        # SaveImage - output
 }
-
-# Max LoRA slots in NunchakuQwenImageLoraStackV3
-# (template has only slot 1; additional slots are added dynamically)
-NUNCHAKU_MAX_LORA_SLOTS = 10
 
 
 # =======================
@@ -208,8 +207,10 @@ def comfyui_get_available_models() -> dict:
     """Query ComfyUI for available models."""
     info: dict[str, list] = {}
     for node_class, key, field in [
-        ("CLIPLoader", "clip_models", "clip_name"),
+        ("LoaderGGUF", "gguf_models", "gguf_name"),
+        ("ClipLoaderGGUF", "clip_gguf_models", "clip_name"),
         ("VAELoader", "vae_models", "vae_name"),
+        ("LoraLoaderModelOnly", "lora_models", "lora_name"),
     ]:
         try:
             resp = http_requests.get(f"{comfyui_url}/object_info/{node_class}", timeout=10)
@@ -217,13 +218,6 @@ def comfyui_get_available_models() -> dict:
             info[key] = data[node_class]["input"]["required"][field][0]
         except Exception:
             info[key] = []
-    # NunchakuQwenImageDiTLoader model names
-    try:
-        resp = http_requests.get(f"{comfyui_url}/object_info/NunchakuQwenImageDiTLoader", timeout=10)
-        data = resp.json()
-        info["nunchaku_models"] = data["NunchakuQwenImageDiTLoader"]["input"]["required"]["model_name"][0]
-    except Exception:
-        info["nunchaku_models"] = []
     return info
 
 
@@ -263,6 +257,7 @@ def _wait_ws(prompt_id: str, job_id: str, timeout: float) -> dict | None:
                     continue
                 if isinstance(raw, bytes):
                     # Binary frame = preview image from ComfyUI
+                    # Format: 4 bytes event type + 4 bytes format + image data
                     if len(raw) > 8:
                         preview_data = raw[8:]
                         with job_lock:
@@ -379,11 +374,14 @@ def preprocess_image(img: Image.Image, pre_resize_target: int | None) -> Image.I
 # extra_model_paths.yaml auto-registration
 # =======================
 YAML_SECTION_NAME = "simple_image_edit"
-YAML_COMMENT = "# Auto-added by app_comfyui_nunchaku.py — LoRA path for simple-image-edit server"
+YAML_COMMENT = "# Auto-added by app_comfyui_gguf.py — LoRA path for simple-image-edit server"
 
 
 def ensure_lora_path_in_comfyui(comfyui_path: Path) -> bool:
-    """Register server/LoRA/ in ComfyUI's extra_model_paths.yaml if not already present."""
+    """Register server/LoRA/ in ComfyUI's extra_model_paths.yaml if not already present.
+
+    Returns True if the file was modified (ComfyUI restart needed).
+    """
     if not LORA_DIR.is_dir():
         return False
 
@@ -393,18 +391,23 @@ def ensure_lora_path_in_comfyui(comfyui_path: Path) -> bool:
     existing_content = ""
     if yaml_path.exists():
         existing_content = yaml_path.read_text(encoding="utf-8")
+
+        # Check if already registered (normalize slashes for comparison)
         normalized = existing_content.replace("\\", "/")
         if lora_abs in normalized:
             print(f"[info] LoRA path already in {yaml_path}", file=sys.stderr)
             return False
 
+    # Build new YAML section
     new_section = f"\n{YAML_COMMENT}\n{YAML_SECTION_NAME}:\n    loras: {lora_abs}/\n"
 
+    # Backup original if it exists and has content
     if existing_content.strip():
         backup_path = yaml_path.with_suffix(".yaml.bak")
         backup_path.write_text(existing_content, encoding="utf-8")
         print(f"[info] backed up {yaml_path} -> {backup_path}", file=sys.stderr)
 
+    # Append section
     with open(yaml_path, "a", encoding="utf-8") as f:
         f.write(new_section)
 
@@ -440,12 +443,8 @@ def reboot_comfyui_and_wait(timeout: float = 120) -> bool:
 # =======================
 # LoRA scanning
 # =======================
-def scan_lora_folder() -> list[dict]:
-    """Scan server/LoRA/ folder and register all LoRA files.
-
-    Files are registered by filename directly — the LoRA directory is
-    expected to be in ComfyUI's search path via extra_model_paths.yaml.
-    """
+def scan_lora_folder(comfyui_lora_names: list[str]) -> list[dict]:
+    """Scan server/LoRA/ folder and match with ComfyUI's known LoRAs."""
     if not LORA_DIR.is_dir():
         print(f"[info] LoRA directory not found: {LORA_DIR}", file=sys.stderr)
         return []
@@ -455,13 +454,24 @@ def scan_lora_folder() -> list[dict]:
         if f.suffix.lower() not in (".safetensors", ".ckpt", ".pt"):
             continue
 
-        registry.append({
-            "name": f.stem,
-            "comfyui_name": f.name,
-            "local_path": str(f),
-            "default_scale": 1.0,
-        })
-        print(f"[info] LoRA found: {f.name}", file=sys.stderr)
+        comfyui_name = None
+        for cn in comfyui_lora_names:
+            cn_base = cn.replace("\\", "/").split("/")[-1]
+            if cn_base == f.name or cn == f.name:
+                comfyui_name = cn
+                break
+
+        if comfyui_name:
+            registry.append({
+                "name": f.stem,
+                "comfyui_name": comfyui_name,
+                "local_path": str(f),
+                "default_scale": 1.0,
+            })
+            print(f"[info] LoRA found: {f.stem} -> {comfyui_name}", file=sys.stderr)
+        else:
+            print(f"[warn] LoRA not recognized by ComfyUI: {f.name}", file=sys.stderr)
+            print(f"[warn]   -> Add LoRA directory to ComfyUI extra_model_paths.yaml", file=sys.stderr)
 
     return registry
 
@@ -475,7 +485,7 @@ def build_workflow(image1_name: str, image2_name: str | None, prompt: str,
     """Build ComfyUI workflow from template with given parameters.
 
     Args:
-        loras: list of {"comfyui_name": str, "scale": float} (max 10)
+        loras: list of {"comfyui_name": str, "scale": float} (max 3)
         pre_resize: target total pixels (e.g. 1000000, 2000000) for ImageScaleToTotalPixels
     """
     N = WF_NODE  # shorthand
@@ -485,41 +495,41 @@ def build_workflow(image1_name: str, image2_name: str | None, prompt: str,
     wf[N["load_image1"]]["inputs"]["image"] = image1_name
     wf[N["load_image2"]]["inputs"]["image"] = image2_name or image1_name
 
-    # Image scale (megapixels) for pre-resize — img1 and img2
+    # Image scale (megapixels) for pre-resize
     if pre_resize:
-        megapixels = pre_resize / 1_000_000
+        megapixels = pre_resize / 1_000_000  # 1000000 -> 1.0, 2000000 -> 2.0
     else:
         megapixels = 1.0
     wf[N["image_scale1"]]["inputs"]["megapixels"] = megapixels
     wf[N["image_scale2"]]["inputs"]["megapixels"] = megapixels
 
-    # Prompt — directly on TextEncodeQwenImageEditPlus nodes
-    wf[N["text_pos"]]["inputs"]["prompt"] = prompt
+    # Prompt (via PrimitiveStringMultiline -> TextEncodeQwenImageEditPlus)
+    wf[N["prompt_text"]]["inputs"]["value"] = prompt
 
-    # Seed, Steps, CFG — directly on KSampler
+    # Seed, Steps, CFG - directly on KSampler
     wf[N["ksampler"]]["inputs"]["seed"] = seed if seed is not None else random.randint(0, 2**32 - 1)
     wf[N["ksampler"]]["inputs"]["steps"] = configured_steps
     wf[N["ksampler"]]["inputs"]["cfg"] = configured_cfg
 
-    # LoRA handling — NunchakuQwenImageLoraStackV3 (dynamic slots)
+    # LoRA handling (3 slots in workflow: lora_loader1 -> lora_loader2 -> lora_loader3)
+    # Chain: LoaderGGUF(453) -> 445 -> 451 -> 452 -> ModelSamplingAuraFlow(441)
+    # Unused nodes are removed and the model chain is rewired.
     active_loras = [l for l in (loras or []) if abs(l.get("scale", 1.0)) > 1e-5]
-    active_loras = active_loras[:NUNCHAKU_MAX_LORA_SLOTS]
+    active_loras = active_loras[:3]  # max 3
 
-    lora_node = wf[N["nunchaku_lora"]]
-    lora_count = len(active_loras)
-    lora_node["inputs"]["lora_count"] = lora_count
-    lora_node["inputs"]["\U0001f522 LoRA Count"] = str(lora_count)
-    lora_node["inputs"]["toggle_all"] = lora_count > 0
+    loader_keys = ["lora_loader1", "lora_loader2", "lora_loader3"]
+    last_model_source = [N["gguf_loader"], 0]  # default: direct from LoaderGGUF
+    for i, key in enumerate(loader_keys):
+        if i < len(active_loras):
+            wf[N[key]]["inputs"]["lora_name"] = active_loras[i]["comfyui_name"]
+            wf[N[key]]["inputs"]["strength_model"] = active_loras[i]["scale"]
+            last_model_source = [N[key], 0]
+        else:
+            # Remove unused LoRA node from workflow
+            del wf[N[key]]
 
-    # Remove template slot 1 defaults, then set active slots
-    for key in list(lora_node["inputs"].keys()):
-        if key.startswith(("enabled_", "lora_name_", "lora_strength_")):
-            del lora_node["inputs"][key]
-
-    for i, lora in enumerate(active_loras, 1):
-        lora_node["inputs"][f"enabled_{i}"] = True
-        lora_node["inputs"][f"lora_name_{i}"] = lora["comfyui_name"]
-        lora_node["inputs"][f"lora_strength_{i}"] = lora["scale"]
+    # Rewire ModelSamplingAuraFlow to the last active node in the chain
+    wf[N["model_sampling"]]["inputs"]["model"] = last_model_source
 
     return wf
 
@@ -1206,7 +1216,7 @@ except FileNotFoundError:
 def main():
     global server_password, gallery_enabled, comfyui_url, configured_steps, configured_cfg
 
-    ap = argparse.ArgumentParser(description="Qwen Image Edit Web Server (ComfyUI Nunchaku backend)")
+    ap = argparse.ArgumentParser(description="Qwen Image Edit Web Server (ComfyUI GGUF backend)")
     ap.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
     ap.add_argument("--port", type=int, default=5000, help="Bind port (default: 5000)")
     ap.add_argument("--password", default="password", help="Generation password (default: password)")
@@ -1263,21 +1273,20 @@ def main():
     if not comfyui_connected:
         sys.exit(1)
 
-    # Check required models (Nunchaku model + CLIP + VAE)
+    # Check required models (GGUF model + GGUF CLIP + VAE)
     print("[info] checking available models...", file=sys.stderr)
     available = comfyui_get_available_models()
 
-    nunchaku_model_name = WORKFLOW_TEMPLATE.get(WF_NODE["nunchaku_model"], {}).get("inputs", {}).get("model_name", "")
-    clip_name = WORKFLOW_TEMPLATE.get(WF_NODE["clip_loader"], {}).get("inputs", {}).get("clip_name", "")
+    gguf_name = WORKFLOW_TEMPLATE.get(WF_NODE["gguf_loader"], {}).get("inputs", {}).get("gguf_name", "")
+    clip_gguf_name = WORKFLOW_TEMPLATE.get(WF_NODE["clip_loader_gguf"], {}).get("inputs", {}).get("clip_name", "")
     vae_name = WORKFLOW_TEMPLATE.get(WF_NODE["vae_loader"], {}).get("inputs", {}).get("vae_name", "")
 
     model_download_urls = {
-        "nunchaku_models": [
-            "https://huggingface.co/nunchaku-ai/nunchaku-qwen-image-edit-2509/resolve/main/lightning-251115/svdq-int4_r128-qwen-image-edit-2509-lightning-8steps-251115.safetensors",
-            "https://huggingface.co/nunchaku-ai/nunchaku-qwen-image-edit-2509/resolve/main/lightning-251115/svdq-fp4_r128-qwen-image-edit-2509-lightning-8steps-251115.safetensors",
+        "gguf_models": [
+            "https://huggingface.co/Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF/resolve/main/v23/Qwen-Rapid-NSFW-v23_Q6_K.gguf",
         ],
-        "clip_models": [
-            "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        "clip_gguf_models": [
+            "https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.Q6_K.gguf",
         ],
         "vae_models": [
             "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors",
@@ -1285,10 +1294,10 @@ def main():
     }
 
     missing = []
-    if nunchaku_model_name and nunchaku_model_name not in available.get("nunchaku_models", []):
-        missing.append(("Nunchaku", nunchaku_model_name, "nunchaku_models"))
-    if clip_name and clip_name not in available.get("clip_models", []):
-        missing.append(("CLIP", clip_name, "clip_models"))
+    if gguf_name and gguf_name not in available.get("gguf_models", []):
+        missing.append(("GGUF", gguf_name, "gguf_models"))
+    if clip_gguf_name and clip_gguf_name not in available.get("clip_gguf_models", []):
+        missing.append(("CLIP(GGUF)", clip_gguf_name, "clip_gguf_models"))
     if vae_name and vae_name not in available.get("vae_models", []):
         missing.append(("VAE", vae_name, "vae_models"))
 
@@ -1302,19 +1311,9 @@ def main():
         print("[error] Place model files in ComfyUI's models directory.", file=sys.stderr)
         sys.exit(1)
     else:
-        print(f"[info] Nunchaku: {nunchaku_model_name} ✓", file=sys.stderr)
-        print(f"[info] CLIP: {clip_name} ✓", file=sys.stderr)
+        print(f"[info] GGUF: {gguf_name} ✓", file=sys.stderr)
+        print(f"[info] CLIP: {clip_gguf_name} ✓", file=sys.stderr)
         print(f"[info] VAE:  {vae_name} ✓", file=sys.stderr)
-
-    # Check NunchakuQwenImageLoraStackV3 custom node availability
-    try:
-        resp = http_requests.get(f"{comfyui_url}/object_info/NunchakuQwenImageLoraStackV3", timeout=10)
-        if resp.status_code == 200:
-            print("[info] NunchakuQwenImageLoraStackV3 node ✓", file=sys.stderr)
-        else:
-            print("[warn] NunchakuQwenImageLoraStackV3 node not found. Install nunchaku ComfyUI nodes.", file=sys.stderr)
-    except Exception:
-        print("[warn] Could not verify NunchakuQwenImageLoraStackV3 node availability.", file=sys.stderr)
 
     # Auto-register LoRA path in ComfyUI's extra_model_paths.yaml
     yaml_modified = False
@@ -1333,14 +1332,14 @@ def main():
             print("[warn] Restart ComfyUI manually and re-run this server.", file=sys.stderr)
 
     # Scan LoRA folder
-    lora_registry.extend(scan_lora_folder())
+    lora_registry.extend(scan_lora_folder(available.get("lora_models", [])))
     if lora_registry:
         print(f"[info] {len(lora_registry)} LoRA(s) available", file=sys.stderr)
 
     # Build model info for UI
-    model_info["pipeline"] = f"ComfyUI Nunchaku ({comfyui_url})"
-    model_info["transformer"] = Path(nunchaku_model_name).stem if nunchaku_model_name else "unknown"
-    model_info["text_encoder_class"] = clip_name
+    model_info["pipeline"] = f"ComfyUI GGUF ({comfyui_url})"
+    model_info["transformer"] = Path(gguf_name).stem if gguf_name else "unknown"
+    model_info["text_encoder_class"] = clip_gguf_name
     model_info["vae_class"] = vae_name
     model_info["steps"] = f"{configured_steps} (CFG: {configured_cfg})"
     if lora_registry:

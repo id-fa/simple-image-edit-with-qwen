@@ -1759,7 +1759,7 @@ function updateSlotIndicators() {
     if (!ind) return;
     if (!val) { ind.innerHTML = ''; return; }
     const url = slotValueToUrl(val);
-    ind.innerHTML = (url ? '<img src="' + url + '" style="height:40px;border-radius:3px;vertical-align:middle;margin-right:4px;">' : '')
+    ind.innerHTML = (url ? '<img src="' + url + '" style="max-height:120px;border-radius:6px;border:1px solid #3a3a4a;display:block;margin-bottom:4px;">' : '')
       + '<span>Gallery: ' + val + '</span>';
   });
 }
