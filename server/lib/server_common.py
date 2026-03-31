@@ -41,6 +41,7 @@ cancel_requests: set[str] = set()
 model_info: dict[str, str] = {}
 
 server_password = "password"
+server_password_hash = hashlib.sha256(b"password").hexdigest()
 gallery_enabled = False
 prompt_presets: list[dict[str, str]] = []
 lora_registry: list[dict] = []
@@ -206,8 +207,9 @@ def add_common_args(ap, *, description: str = "Web Server"):
 
 def apply_common_args(args):
     """Apply parsed common arguments to global state."""
-    global server_password, gallery_enabled, db_dir, prompt_presets
+    global server_password, server_password_hash, gallery_enabled, db_dir, prompt_presets
     server_password = args.password
+    server_password_hash = hashlib.sha256(args.password.encode()).hexdigest()
     gallery_enabled = args.gallery
     db_dir = args.db_dir
 

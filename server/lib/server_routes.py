@@ -53,6 +53,14 @@ def register_routes(
             has_preview=has_preview,
         )
 
+    @app.route("/api/login", methods=["POST"])
+    def login():
+        """Verify plaintext password (POST body) and return hashed token for subsequent GET requests."""
+        pw = request.form.get("password", "") or (request.json or {}).get("password", "")
+        if pw != common.server_password:
+            return jsonify({"error": "パスワードが正しくありません / Invalid password"}), 403
+        return jsonify({"ok": True, "token": common.server_password_hash})
+
     @app.route("/api/submit", methods=["POST"])
     def submit():
         pw = request.form.get("password", "")
@@ -140,7 +148,8 @@ def register_routes(
             common.processing_queue.append(job_id)
             queue_pos = len(common.processing_queue)
 
-        return jsonify({"job_id": job_id, "queue_position": queue_pos})
+        return jsonify({"job_id": job_id, "queue_position": queue_pos,
+                        "token": common.server_password_hash})
 
     @app.route("/api/status/<job_id>")
     def status(job_id):
@@ -204,7 +213,7 @@ def register_routes(
     def result(job_id):
         if common.gallery_enabled:
             pw = request.args.get("password", "")
-            if pw != common.server_password:
+            if pw != common.server_password_hash:
                 return jsonify({"error": "Unauthorized"}), 403
         rp = None
         with common.job_lock:
@@ -246,7 +255,7 @@ def register_routes(
         if not common.gallery_enabled:
             return jsonify({"error": "Gallery is disabled"}), 404
         pw = request.args.get("password", "")
-        if pw != common.server_password:
+        if pw != common.server_password_hash:
             return jsonify({"error": "Unauthorized"}), 403
         room = request.args.get("room", "")
         from lib.gallery_db import get_room_db
@@ -279,7 +288,7 @@ def register_routes(
         if not common.gallery_enabled:
             return jsonify({"error": "Gallery is disabled"}), 404
         pw = request.args.get("password", "")
-        if pw != common.server_password:
+        if pw != common.server_password_hash:
             return jsonify({"error": "Unauthorized"}), 403
         room = request.args.get("room", "")
         caller_hash = common.get_user_hash()
@@ -298,7 +307,7 @@ def register_routes(
     def serve_input(job_id, index):
         if common.gallery_enabled:
             pw = request.args.get("password", "")
-            if pw != common.server_password:
+            if pw != common.server_password_hash:
                 return jsonify({"error": "Unauthorized"}), 403
         path = None
         with common.job_lock:
@@ -347,7 +356,7 @@ def register_routes(
     def save_drawing():
         if common.gallery_enabled:
             pw = request.json.get("password", "")
-            if pw != common.server_password:
+            if pw != common.server_password_hash:
                 return jsonify({"error": "Unauthorized"}), 403
 
         import base64
@@ -407,7 +416,7 @@ def register_routes(
     def serve_drawing(drawing_id):
         if common.gallery_enabled:
             pw = request.args.get("password", "")
-            if pw != common.server_password:
+            if pw != common.server_password_hash:
                 return jsonify({"error": "Unauthorized"}), 403
         room = request.args.get("room", "")
         from lib.gallery_db import get_room_db
@@ -425,7 +434,7 @@ def register_routes(
     def serve_drawing_bg(drawing_id):
         if common.gallery_enabled:
             pw = request.args.get("password", "")
-            if pw != common.server_password:
+            if pw != common.server_password_hash:
                 return jsonify({"error": "Unauthorized"}), 403
         room = request.args.get("room", "")
         from lib.gallery_db import get_room_db
@@ -444,7 +453,7 @@ def register_routes(
     def serve_drawing_overlay(drawing_id):
         if common.gallery_enabled:
             pw = request.args.get("password", "")
-            if pw != common.server_password:
+            if pw != common.server_password_hash:
                 return jsonify({"error": "Unauthorized"}), 403
         room = request.args.get("room", "")
         from lib.gallery_db import get_room_db
@@ -463,7 +472,7 @@ def register_routes(
     def list_drawings():
         if common.gallery_enabled:
             pw = request.args.get("password", "")
-            if pw != common.server_password:
+            if pw != common.server_password_hash:
                 return jsonify({"error": "Unauthorized"}), 403
         room = request.args.get("room", "")
         user_hash = common.get_user_hash()
@@ -476,7 +485,7 @@ def register_routes(
     def delete_drawing(drawing_id):
         if common.gallery_enabled:
             pw = request.args.get("password", "")
-            if pw != common.server_password:
+            if pw != common.server_password_hash:
                 return jsonify({"error": "Unauthorized"}), 403
         room = request.args.get("room", "")
         user_hash = common.get_user_hash()

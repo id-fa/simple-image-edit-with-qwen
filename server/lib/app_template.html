@@ -532,10 +532,16 @@ function authQuery() {
   function doLogin() {
     const pw = loginPw.value;
     const rm = (loginRoom ? loginRoom.value.trim() : '') || 'room1';
-    fetch('/api/gallery?password=' + encodeURIComponent(pw) + '&room=' + encodeURIComponent(rm))
+    const fd = new FormData();
+    fd.append('password', pw);
+    fetch('/api/login', { method: 'POST', body: fd })
       .then(r => {
-        if (r.status === 403) { loginErr.style.display = 'block'; return; }
-        sessionPassword = pw;
+        if (r.status === 403) { loginErr.style.display = 'block'; return r.json(); }
+        return r.json();
+      })
+      .then(data => {
+        if (!data || !data.token) return;
+        sessionPassword = data.token;
         sessionRoom = rm;
         loginGate.style.display = 'none';
         document.getElementById('mainContent').style.display = 'block';
@@ -833,6 +839,7 @@ form.addEventListener('submit', async (e) => {
       return;
     }
 
+    if (data.token && !sessionPassword) sessionPassword = data.token;
     const jobId = data.job_id;
     activeJobId = jobId;
     statusText.className = 'status-text queued';
