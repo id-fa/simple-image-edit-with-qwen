@@ -529,7 +529,7 @@ def worker_loop():
             )
             prompt_id = comfyui_submit_prompt(wf)
 
-            outputs = comfyui_wait_for_result(prompt_id, job_id)
+            outputs = comfyui_wait_for_result(prompt_id, job_id, 1200)
 
             if job_id in common.cancel_requests:
                 with common.job_lock:
