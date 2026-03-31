@@ -27,12 +27,16 @@ Python scripts for AI-powered image editing using diffusion models:
 14. **notebooks/colab_app_gguf.ipynb** - Google Colab notebook for GGUF web server (cloudflared tunnel, A100 recommended)
 
 ### Utilities
-15. **server/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
+15. **server/lib/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
+16. **server/lib/gallery_db.py** - Shared SQLite gallery persistence module (room-based DB isolation, used by all 6 web servers)
+17. **server/lib/server_common.py** - Shared server core: global state, user hash, gallery ref resolution, cleanup loop, argparse helpers, template loading
+18. **server/lib/server_routes.py** - Shared Flask route handlers: all API routes (submit, status, cancel, result, translate, gallery, drawing, etc.)
+19. **server/lib/image_utils.py** - Shared image preprocessing (round_up, pre_resize, fit_and_align) and LoRA argument parsing for diffusers servers
 
 ### Workflow Templates (`server/comfyui_workflow/`)
-16. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_api.json** - ComfyUI API format workflow for Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui.py)
-17. **server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_api.json** - ComfyUI API format workflow for Nunchaku Qwen-Image-Edit-2509 Lightning (used by app_comfyui_nunchaku.py)
-18. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_gguf_api.json** - ComfyUI API format workflow for GGUF Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui_gguf.py)
+20. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_api.json** - ComfyUI API format workflow for Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui.py)
+21. **server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_api.json** - ComfyUI API format workflow for Nunchaku Qwen-Image-Edit-2509 Lightning (used by app_comfyui_nunchaku.py)
+22. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_gguf_api.json** - ComfyUI API format workflow for GGUF Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui_gguf.py)
 
 Image editing scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All image scripts support `--t2i` mode for text-to-image generation. The video script (`simple_i2v_ltx2_distilled.py`) supports i2v (image-to-video), flf2v (first+last frame to video via `--ref`), and t2v (text-to-video via `--t2i`). Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
@@ -221,6 +225,7 @@ python app_comfyui_gguf.py --preset "高画質化::Enhance quality." --preset "�
 - `--no-offload` - Disable offloading (high VRAM)
 - `--lora REPO_OR_PATH` - LoRA weights (repeatable). Format: `path_or_repo` or `repo_id::weight_name`. Multiple `--lora` args register multiple LoRAs
 - `--gallery` - Enable gallery mode (show generation history with image reuse)
+- `--db-dir DIR` - Gallery SQLite database directory (default: `./db`). Each room creates a separate `room_{hash}.db` file
 - `--preset "label::prompt"` - Prompt preset button (repeatable). Omit `label::` for auto-numbered labels (`preset1`, `preset2`, ...)
 
 ### Web Server Features
@@ -242,7 +247,9 @@ python app_comfyui_gguf.py --preset "高画質化::Enhance quality." --preset "�
 - Model info display: pipeline, transformer, text encoder class, tokenizer, VAE class, dtype, LoRA
 - Error messages: Japanese/English bilingual (i18n)
 - Gallery mode (`--gallery`): Browse past generation history, click thumbnails to enlarge, download links on each image, reuse gallery images as input for new generations via radio button selection (Img1/Img2 slots). Selecting a gallery image automatically disables t2i mode. Selected image shown as thumbnail + ID text below the file input
-- Gallery login gate: When `--gallery` is enabled, a password login screen is shown first; all gallery/result/input APIs require password authentication via query parameter
+- Gallery persistence (SQLite): Gallery and drawing data persisted to SQLite databases (`--db-dir`), surviving process restarts. WAL mode for concurrent access. Thread-safe (new connection per operation). Shared module: `server/gallery_db.py`
+- Room-based isolation: Login screen includes optional room name field. Each room gets a separate SQLite database (`room_{SHA256}.db`). Empty room name uses `room_default.db`. Room parameter passed via `room` query/form parameter alongside `password`. Stale room DBs (no access for 7 days) auto-cleaned
+- Gallery login gate: When `--gallery` is enabled, a password login screen is shown first; all gallery/result/input APIs require password and room authentication via query parameter
 - User identification: Each gallery entry shows a hashed user ID (SHA-256 of IP + User-Agent, 8 chars) to distinguish generators. Uses `X-Forwarded-For` header when available (reverse proxy support)
 - Gallery entry deletion: Users can delete their own gallery entries (user_hash match required). Deleted entries remain visible as placeholders showing timestamp, user ID, and bilingual deletion message. Files are not removed (cleaned up by auto-cleanup). `DELETE /api/gallery/<job_id>` sets job status to `"hidden"`
 - Drawing editor: Click any image (gallery thumbnails, upload previews, generated results) to open a full-screen drawing editor with:
@@ -420,7 +427,7 @@ All scripts share this preprocessing flow:
 - LoRA: scans `server/LoRA/` folder, matches against ComfyUI's known LoRAs via `/object_info/LoraLoaderModelOnly`. Workflow has 3 `LoraLoaderModelOnly` slots chained (UNETLoader → slot1 → slot2 → slot3 → ModelSamplingAuraFlow); unused slots are removed from workflow and chain is rewired
 - `--comfyui-path`: auto-registers LoRA path in `extra_model_paths.yaml` and reboots ComfyUI via Manager API (`GET /manager/reboot`)
 - Steps/CFG: set directly on KSampler node
-- HTML template: standalone `server/app_comfyui_template.html` (no app_aio.py dependency), includes ComfyUI-specific UI (preview checkbox, preview area)
+- HTML template: shared `server/lib/app_template.html` (unified template for all 6 servers). Jinja2 variables: `server_title`, `pre_resize_options`, `has_preview` (ComfyUI-only: preview checkbox, preview area)
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (UNET/CLIP/VAE), LoRA path registration
 
 **ComfyUI API Backend — GGUF** (`server/app_comfyui_gguf.py`):
@@ -429,7 +436,7 @@ All scripts share this preprocessing flow:
 - Model loading: `UnetLoaderGGUF` (GGUF transformer) + `CLIPLoaderGGUF` (GGUF CLIP) instead of `UNETLoader`/`CLIPLoader`
 - LoRA: same 3-slot `LoraLoaderModelOnly` chain as AIO (UnetLoaderGGUF → slot1 → slot2 → slot3 → ModelSamplingAuraFlow)
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (GGUF/CLIP_GGUF/VAE), LoRA path registration
-- Shares `app_comfyui_template.html` with AIO/Nunchaku variants
+- Shares `app_template.html` with all server variants
 
 **ComfyUI API Backend — Nunchaku** (`server/app_comfyui_nunchaku.py`):
 - Same architecture as AIO variant but for the Nunchaku workflow
@@ -439,7 +446,21 @@ All scripts share this preprocessing flow:
 - LoRA: via `NunchakuQwenImageLoraStackV3` custom node — `lora_count` + `enabled_N`/`lora_name_N`/`lora_strength_N` (dynamic slots). Scans `server/LoRA/` folder directly (files registered by filename, expected in ComfyUI's search path via `extra_model_paths.yaml`)
 - No UNETLoader (nunchaku model loaded by `NunchakuQwenImageDiTLoader` node 133)
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (Nunchaku/CLIP/VAE), NunchakuQwenImageLoraStackV3 node availability
-- Shares `app_comfyui_template.html` with AIO variant
+- Shares `app_template.html` with all server variants
+
+**Gallery Persistence** (`server/gallery_db.py`):
+- Shared SQLite module used by all 6 web servers
+- `GalleryDB` class: thread-safe (new connection per operation), WAL mode
+- Tables: `gallery_jobs` (job_id, created, prompt, seed, t2i, input_count, user_hash, status, input_paths JSON, result_path), `drawings` (drawing_id, user_hash, created, type, source, path, bg_path, overlay_path)
+- Room isolation: `get_room_db(db_dir, room_name)` → cached `GalleryDB` instances, room name hashed (SHA-256) to `room_{hash}.db`
+- Dual lookup pattern: in-memory job queue (transient, for active jobs) vs SQLite gallery (persistent, for history). Gallery route reads DB first, then merges in-memory "done" jobs not yet persisted
+- `cleanup_old_room_dbs(db_dir)`: removes room DB files with no access for 7 days
+
+**Shared Server Modules** (`server/server_common.py`, `server/server_routes.py`, `server/image_utils.py`):
+- `server_common.py`: Global state (Flask app, job queue, locks, config), `get_user_hash()`, `resolve_gallery_ref()`, `cleanup_loop()`, `load_html_template()`, `add_common_args()`/`apply_common_args()`, `persist_job_to_db()`, `start_server_threads()`
+- `server_routes.py`: `register_routes()` — all shared Flask routes (submit, status, cancel, result, translate, gallery, gallery_delete, serve_input, model_info, loras, queue_info, drawing CRUD). Parameterized by `server_title`, `pre_resize_options`, `pre_resize_map`, `has_preview`, `get_total_steps`, `prompt_default`
+- `image_utils.py`: `round_up()`, `pre_resize_to_total_pixels()`, `fit_and_align()`, `preprocess_image()`, `parse_lora_args()` — used by diffusers servers only (ComfyUI servers have inline image processing)
+- Each server script keeps only: fixed constants, pipeline/workflow management, inference/worker loop, and `main()` with server-specific args
 
 ### Configurable Parameters
 

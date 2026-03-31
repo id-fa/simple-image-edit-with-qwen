@@ -21,22 +21,20 @@ from __future__ import annotations
 import argparse
 import copy
 import gc
-import hashlib
 import io
 import json
 import math
-import os
 import random
 import sys
-import threading
 import time
 import uuid
-from collections import deque
 from pathlib import Path
 
 import requests as http_requests
-from flask import Flask, request, jsonify, send_file, render_template_string
 from PIL import Image
+
+import lib.server_common as common
+from lib.server_routes import register_routes
 
 try:
     import websocket as ws_lib
@@ -67,11 +65,6 @@ H_MULT = 16
 
 T2I_SIZE = (1024, 1024)
 
-CLEANUP_INTERVAL_SEC = 300  # check every 5 min
-MAX_AGE_SEC = 3600          # 1 hour
-MAX_QUEUE_WAITING = 2       # max waiting jobs
-
-TMP_DIR = Path(__file__).parent / "tmp"
 LORA_DIR = Path(__file__).parent / "LoRA"
 
 # =======================
@@ -117,27 +110,10 @@ NUNCHAKU_MAX_LORA_SLOTS = 10
 
 
 # =======================
-# Global state
+# ComfyUI-specific state
 # =======================
-app = Flask(__name__)
-
-# Job queue & tracking
-job_lock = threading.Lock()
-jobs: dict[str, dict] = {}
-processing_queue: deque[str] = deque()
-current_processing: str | None = None
-cancel_requests: set[str] = set()
-
 comfyui_url = "http://127.0.0.1:8188"
 comfyui_client_id = uuid.uuid4().hex
-
-server_password = "password"
-gallery_enabled = False
-prompt_presets: list[dict[str, str]] = []
-lora_registry: list[dict] = []   # [{"name", "comfyui_name", "local_path", "default_scale"}]
-drawings: dict[str, dict] = {}
-model_info: dict[str, str] = {}
-
 configured_steps = DEFAULT_STEPS
 configured_cfg = DEFAULT_CFG
 
@@ -253,7 +229,7 @@ def _wait_ws(prompt_id: str, job_id: str, timeout: float) -> dict | None:
 
     try:
         while time.time() - start < timeout:
-            if job_id in cancel_requests:
+            if job_id in common.cancel_requests:
                 comfyui_interrupt()
                 return None
 
@@ -265,9 +241,9 @@ def _wait_ws(prompt_id: str, job_id: str, timeout: float) -> dict | None:
                     # Binary frame = preview image from ComfyUI
                     if len(raw) > 8:
                         preview_data = raw[8:]
-                        with job_lock:
-                            if job_id in jobs:
-                                jobs[job_id]["preview"] = preview_data
+                        with common.job_lock:
+                            if job_id in common.jobs:
+                                common.jobs[job_id]["preview"] = preview_data
                     continue
                 data = json.loads(raw)
                 msg_type = data.get("type", "")
@@ -279,10 +255,10 @@ def _wait_ws(prompt_id: str, job_id: str, timeout: float) -> dict | None:
                 if msg_type == "progress":
                     step = msg_data.get("value", 0)
                     total = msg_data.get("max", configured_steps)
-                    with job_lock:
-                        if job_id in jobs:
-                            jobs[job_id]["current_step"] = step
-                            jobs[job_id]["total_steps"] = total
+                    with common.job_lock:
+                        if job_id in common.jobs:
+                            common.jobs[job_id]["current_step"] = step
+                            common.jobs[job_id]["total_steps"] = total
 
                 elif msg_type == "executing":
                     if msg_data.get("node") is None:
@@ -317,7 +293,7 @@ def _wait_poll(prompt_id: str, job_id: str, timeout: float) -> dict | None:
     """Polling-based fallback (no progress tracking)."""
     start = time.time()
     while time.time() - start < timeout:
-        if job_id in cancel_requests:
+        if job_id in common.cancel_requests:
             comfyui_interrupt()
             return None
         try:
@@ -528,31 +504,30 @@ def build_workflow(image1_name: str, image2_name: str | None, prompt: str,
 # Job worker
 # =======================
 def worker_loop():
-    global current_processing
     while True:
         job_id = None
-        with job_lock:
-            while processing_queue:
-                candidate = processing_queue[0]
-                if candidate in cancel_requests:
-                    processing_queue.popleft()
-                    cancel_requests.discard(candidate)
-                    jobs[candidate]["status"] = "cancelled"
+        with common.job_lock:
+            while common.processing_queue:
+                candidate = common.processing_queue[0]
+                if candidate in common.cancel_requests:
+                    common.processing_queue.popleft()
+                    common.cancel_requests.discard(candidate)
+                    common.jobs[candidate]["status"] = "cancelled"
                     continue
                 break
 
-            if processing_queue:
-                job_id = processing_queue[0]
-                current_processing = job_id
-                jobs[job_id]["status"] = "processing"
-                jobs[job_id]["current_step"] = 0
+            if common.processing_queue:
+                job_id = common.processing_queue[0]
+                common.current_processing = job_id
+                common.jobs[job_id]["status"] = "processing"
+                common.jobs[job_id]["current_step"] = 0
 
         if job_id is None:
             time.sleep(0.5)
             continue
 
         try:
-            job = jobs[job_id]
+            job = common.jobs[job_id]
             image_names: list[str] = []
 
             if job["t2i"]:
@@ -575,7 +550,7 @@ def worker_loop():
             # Resolve LoRA selection
             lora_selection = []
             for sel in job.get("loras", []):
-                matched = [l for l in lora_registry if l["name"] == sel["name"]]
+                matched = [l for l in common.lora_registry if l["name"] == sel["name"]]
                 if matched:
                     lora_selection.append({
                         "comfyui_name": matched[0]["comfyui_name"],
@@ -596,15 +571,15 @@ def worker_loop():
             # Wait for result (with progress tracking)
             outputs = comfyui_wait_for_result(prompt_id, job_id)
 
-            if job_id in cancel_requests:
-                with job_lock:
-                    cancel_requests.discard(job_id)
-                    jobs[job_id]["status"] = "cancelled"
+            if job_id in common.cancel_requests:
+                with common.job_lock:
+                    common.cancel_requests.discard(job_id)
+                    common.jobs[job_id]["status"] = "cancelled"
             elif outputs is None:
-                with job_lock:
-                    if jobs[job_id]["status"] != "cancelled":
-                        jobs[job_id]["status"] = "error"
-                        jobs[job_id]["error"] = "ComfyUI timeout または出力なし / ComfyUI timeout or no output"
+                with common.job_lock:
+                    if common.jobs[job_id]["status"] != "cancelled":
+                        common.jobs[job_id]["status"] = "error"
+                        common.jobs[job_id]["error"] = "ComfyUI timeout または出力なし / ComfyUI timeout or no output"
             else:
                 save_output = outputs.get(WF_NODE["save_image"], {})
                 images = save_output.get("images", [])
@@ -617,599 +592,57 @@ def worker_loop():
                     img_info.get("subfolder", ""),
                     img_info.get("type", "output"),
                 )
-                out_path = TMP_DIR / f"{job_id}_out.png"
+                out_path = common.TMP_DIR / f"{job_id}_out.png"
                 with open(out_path, "wb") as f:
                     f.write(img_bytes)
 
-                with job_lock:
-                    jobs[job_id]["status"] = "done"
-                    jobs[job_id]["result_path"] = str(out_path)
+                with common.job_lock:
+                    common.jobs[job_id]["status"] = "done"
+                    common.jobs[job_id]["result_path"] = str(out_path)
+
+                common.persist_job_to_db(job_id, job, str(out_path))
 
         except Exception as ex:
             import traceback
             traceback.print_exc()
-            with job_lock:
-                cancel_requests.discard(job_id)
-                if jobs[job_id]["status"] != "cancelled":
-                    jobs[job_id]["status"] = "error"
-                    jobs[job_id]["error"] = str(ex)
+            with common.job_lock:
+                common.cancel_requests.discard(job_id)
+                if common.jobs[job_id]["status"] != "cancelled":
+                    common.jobs[job_id]["status"] = "error"
+                    common.jobs[job_id]["error"] = str(ex)
         finally:
-            with job_lock:
-                if processing_queue and processing_queue[0] == job_id:
-                    processing_queue.popleft()
-                current_processing = None
+            with common.job_lock:
+                if common.processing_queue and common.processing_queue[0] == job_id:
+                    common.processing_queue.popleft()
+                common.current_processing = None
             gc.collect()
 
 
 # =======================
-# Cleanup old files
+# Register shared routes & load template
 # =======================
-def cleanup_loop():
-    while True:
-        time.sleep(CLEANUP_INTERVAL_SEC)
-        now = time.time()
-        cutoff = now - MAX_AGE_SEC
-
-        to_remove = []
-        with job_lock:
-            for jid, job in jobs.items():
-                if job["created"] < cutoff:
-                    to_remove.append(jid)
-
-        for jid in to_remove:
-            with job_lock:
-                job = jobs.pop(jid, None)
-                cancel_requests.discard(jid)
-            if job:
-                for p in job.get("input_paths", []):
-                    try:
-                        os.remove(p)
-                    except OSError:
-                        pass
-                rp = job.get("result_path")
-                if rp:
-                    try:
-                        os.remove(rp)
-                    except OSError:
-                        pass
-
-        # Clean old drawings
-        draw_remove = []
-        for did, d in drawings.items():
-            if d["created"] < cutoff:
-                draw_remove.append(did)
-        for did in draw_remove:
-            d = drawings.pop(did, None)
-            if d:
-                for key in ("path", "bg_path", "overlay_path"):
-                    p = d.get(key)
-                    if p:
-                        try:
-                            os.remove(p)
-                        except OSError:
-                            pass
-
-        # Clean orphaned tmp files
-        for f in TMP_DIR.iterdir():
-            if f.name == ".gitkeep":
-                continue
-            try:
-                if f.stat().st_mtime < cutoff:
-                    f.unlink()
-            except OSError:
-                pass
-
-
-# =======================
-# Gallery helper
-# =======================
-def get_user_hash() -> str:
-    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    if not ip:
-        ip = request.remote_addr or ""
-    ua = request.headers.get("User-Agent", "")
-    return hashlib.sha256(f"{ip}:{ua}".encode()).hexdigest()[:8]
-
-
-def resolve_gallery_ref(ref_str: str, new_job_id: str, slot: int) -> str | None:
-    import shutil
-    parts = ref_str.split(":")
-    if len(parts) < 2:
-        return None
-
-    if parts[0] == "drawing":
-        drawing_id = parts[1]
-        d = drawings.get(drawing_id)
-        if not d:
-            return None
-        src_path = d.get("path")
-        if not src_path or not os.path.exists(src_path):
-            return None
-        dest_path = TMP_DIR / f"{new_job_id}_in{slot}.png"
-        shutil.copy2(src_path, dest_path)
-        return str(dest_path)
-
-    src_job_id, ref_type = parts[0], parts[1]
-    with job_lock:
-        src_job = jobs.get(src_job_id)
-        if not src_job:
-            return None
-        if ref_type == "result":
-            src_path = src_job.get("result_path")
-        elif ref_type == "input" and len(parts) >= 3:
-            idx = int(parts[2])
-            paths = src_job.get("input_paths", [])
-            src_path = paths[idx] if 0 <= idx < len(paths) else None
-        else:
-            return None
-    if not src_path or not os.path.exists(src_path):
-        return None
-    ext = Path(src_path).suffix.lower() or ".png"
-    dest_path = TMP_DIR / f"{new_job_id}_in{slot}{ext}"
-    shutil.copy2(src_path, dest_path)
-    return str(dest_path)
-
-
-# =======================
-# Routes
-# =======================
-@app.route("/")
-def index():
-    return render_template_string(HTML_TEMPLATE, gallery_enabled=gallery_enabled,
-                                  prompt_presets=prompt_presets)
-
-
-@app.route("/api/submit", methods=["POST"])
-def submit():
-    pw = request.form.get("password", "")
-    if pw != server_password:
-        return jsonify({"error": "パスワードが正しくありません / Invalid password"}), 403
-
-    with job_lock:
-        waiting_count = len(processing_queue)
-        if waiting_count >= 1 + MAX_QUEUE_WAITING:
-            return jsonify({"error": "サーバーがビジー状態です / Server is busy. Please try again later.",
-                            "busy": True, "queue_size": waiting_count}), 503
-
-    t2i = request.form.get("t2i") == "1"
-    prompt = request.form.get("prompt", "").strip() or PROMPT_DEFAULT
-    seed_str = request.form.get("seed", "").strip()
-    seed = int(seed_str) if seed_str else None
-    pre_resize_str = request.form.get("pre_resize", "1m")
-    pre_resize_map = {"1m": 1_000_000, "2m": 2_000_000}
-    pre_resize = pre_resize_map.get(pre_resize_str, 1_000_000)
-
-    job_id = uuid.uuid4().hex[:12]
-    input_paths = []
-
-    if not t2i:
-        f1 = request.files.get("image1")
-        f2 = request.files.get("image2")
-        g1 = request.form.get("gallery_image1", "").strip()
-        g2 = request.form.get("gallery_image2", "").strip()
-
-        if f1 and f1.filename:
-            ext1 = Path(f1.filename).suffix.lower() or ".png"
-            save1 = TMP_DIR / f"{job_id}_in0{ext1}"
-            f1.save(save1)
-            input_paths.append(str(save1))
-        elif g1:
-            resolved = resolve_gallery_ref(g1, job_id, 0)
-            if not resolved:
-                return jsonify({"error": "ギャラリー画像1の参照が無効または期限切れです / Gallery image 1 reference is invalid or expired"}), 400
-            input_paths.append(resolved)
-        else:
-            return jsonify({"error": "Image 1 を選択してください / Please select Image 1"}), 400
-
-        if f2 and f2.filename:
-            ext2 = Path(f2.filename).suffix.lower() or ".png"
-            save2 = TMP_DIR / f"{job_id}_in1{ext2}"
-            f2.save(save2)
-            input_paths.append(str(save2))
-        elif g2:
-            resolved = resolve_gallery_ref(g2, job_id, 1)
-            if resolved:
-                input_paths.append(resolved)
-    else:
-        if not prompt or prompt == PROMPT_DEFAULT:
-            return jsonify({"error": "t2iモードではプロンプトの入力が必要です / Prompt is required in t2i mode"}), 400
-
-    # Parse LoRA selection
-    lora_selection = []
-    loras_raw = request.form.get("loras", "").strip()
-    if loras_raw:
-        try:
-            lora_selection = json.loads(loras_raw)
-        except Exception:
-            pass
-
-    user_hash = get_user_hash()
-
-    with job_lock:
-        jobs[job_id] = {
-            "status": "queued",
-            "created": time.time(),
-            "input_paths": input_paths,
-            "result_path": None,
-            "error": None,
-            "prompt": prompt,
-            "seed": seed,
-            "pre_resize": pre_resize,
-            "t2i": t2i,
-            "current_step": 0,
-            "total_steps": configured_steps,
-            "user_hash": user_hash,
-            "loras": lora_selection,
-        }
-        processing_queue.append(job_id)
-        queue_pos = len(processing_queue)
-
-    return jsonify({"job_id": job_id, "queue_position": queue_pos})
-
-
-@app.route("/api/status/<job_id>")
-def status(job_id):
-    with job_lock:
-        job = jobs.get(job_id)
-        if not job:
-            return jsonify({"error": "ジョブが見つかりません / Job not found"}), 404
-
-        queue_pos = 0
-        for i, qid in enumerate(processing_queue):
-            if qid == job_id:
-                queue_pos = i + 1
-                break
-
-        return jsonify({
-            "status": job["status"],
-            "queue_position": queue_pos,
-            "queue_total": len(processing_queue),
-            "error": job.get("error"),
-            "current_step": job.get("current_step", 0),
-            "total_steps": job.get("total_steps", configured_steps),
-            "has_preview": "preview" in job,
-        })
-
-
-@app.route("/api/preview/<job_id>")
-def preview(job_id):
-    with job_lock:
-        job = jobs.get(job_id)
-        if not job or "preview" not in job:
-            return "", 204
-        preview_data = job["preview"]
-    content_type = "image/jpeg"
-    if preview_data[:4] == b'\x89PNG':
-        content_type = "image/png"
-    return send_file(io.BytesIO(preview_data), mimetype=content_type)
-
-
-@app.route("/api/cancel/<job_id>", methods=["POST"])
-def cancel(job_id):
-    with job_lock:
-        job = jobs.get(job_id)
-        if not job:
-            return jsonify({"error": "ジョブが見つかりません / Job not found"}), 404
-        if job["status"] in ("done", "error", "cancelled"):
-            return jsonify({"error": "このジョブは既に終了しています / This job has already finished"}), 400
-        cancel_requests.add(job_id)
-        if job["status"] == "queued":
-            try:
-                processing_queue.remove(job_id)
-            except ValueError:
-                pass
-            job["status"] = "cancelled"
-            cancel_requests.discard(job_id)
-
-    return jsonify({"ok": True, "message": "キャンセルを要求しました / Cancel requested"})
-
-
-@app.route("/api/result/<job_id>")
-def result(job_id):
-    if gallery_enabled:
-        pw = request.args.get("password", "")
-        if pw != server_password:
-            return jsonify({"error": "Unauthorized"}), 403
-    with job_lock:
-        job = jobs.get(job_id)
-        if not job:
-            return jsonify({"error": "ジョブが見つかりません / Job not found"}), 404
-        if job["status"] != "done":
-            return jsonify({"error": "まだ処理中です / Still processing"}), 400
-        rp = job["result_path"]
-    if not rp or not os.path.exists(rp):
-        return jsonify({"error": "結果ファイルが見つかりません / Result file not found"}), 404
-    return send_file(rp, mimetype="image/png", as_attachment=True,
-                     download_name=f"result_{job_id}.png")
-
-
-@app.route("/api/translate", methods=["POST"])
-def translate_text():
-    text = request.json.get("text", "").strip()
-    target = request.json.get("target", "en")
-    if not text:
-        return jsonify({"error": "テキストが空です / Text is empty"}), 400
-    try:
-        import asyncio
-        from googletrans import Translator
-        tr = Translator()
-        result = asyncio.run(tr.translate(text, dest=target))
-        return jsonify({"translated": result.text, "src": result.src})
-    except Exception as ex:
-        return jsonify({"error": f"翻訳に失敗しました / Translation failed: {ex}"}), 500
-
-
-@app.route("/api/gallery")
-def gallery():
-    if not gallery_enabled:
-        return jsonify({"error": "Gallery is disabled"}), 404
-    pw = request.args.get("password", "")
-    if pw != server_password:
-        return jsonify({"error": "Unauthorized"}), 403
-    with job_lock:
-        items = []
-        for jid, job in jobs.items():
-            if job["status"] == "done":
-                items.append({
-                    "job_id": jid,
-                    "created": job["created"],
-                    "prompt": job.get("prompt", ""),
-                    "seed": job.get("seed"),
-                    "t2i": job.get("t2i", False),
-                    "input_count": len(job.get("input_paths", [])),
-                    "user_hash": job.get("user_hash", ""),
-                    "deleted": False,
-                })
-            elif job["status"] == "hidden":
-                items.append({
-                    "job_id": jid,
-                    "created": job["created"],
-                    "user_hash": job.get("user_hash", ""),
-                    "deleted": True,
-                })
-    items.sort(key=lambda x: x["created"], reverse=True)
-    caller_hash = get_user_hash()
-    return jsonify({"items": items, "caller_hash": caller_hash})
-
-
-@app.route("/api/gallery/<job_id>", methods=["DELETE"])
-def gallery_delete(job_id):
-    if not gallery_enabled:
-        return jsonify({"error": "Gallery is disabled"}), 404
-    pw = request.args.get("password", "")
-    if pw != server_password:
-        return jsonify({"error": "Unauthorized"}), 403
-    caller_hash = get_user_hash()
-    with job_lock:
-        job = jobs.get(job_id)
-        if not job:
-            return jsonify({"error": "ジョブが見つかりません / Job not found"}), 404
-        if job.get("user_hash", "") != caller_hash:
-            return jsonify({"error": "他のユーザーの履歴は削除できません / Cannot delete another user's entry"}), 403
-        job["status"] = "hidden"
-    return jsonify({"ok": True})
-
-
-@app.route("/api/input/<job_id>/<int:idx>")
-def serve_input(job_id, idx):
-    if gallery_enabled:
-        pw = request.args.get("password", "")
-        if pw != server_password:
-            return jsonify({"error": "Unauthorized"}), 403
-    with job_lock:
-        job = jobs.get(job_id)
-        if not job:
-            return jsonify({"error": "Job not found"}), 404
-        paths = job.get("input_paths", [])
-        if idx < 0 or idx >= len(paths):
-            return jsonify({"error": "Input index out of range"}), 404
-        path = paths[idx]
-    if not os.path.exists(path):
-        return jsonify({"error": "File not found"}), 404
-    ext = Path(path).suffix.lower().lstrip(".")
-    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
-            "webp": "image/webp", "bmp": "image/bmp"}.get(ext, "image/png")
-    return send_file(path, mimetype=mime)
-
-
-@app.route("/api/model_info")
-def get_model_info():
-    return jsonify(model_info)
-
-
-@app.route("/api/loras")
-def get_loras():
-    return jsonify([{"name": e["name"], "default_scale": e["default_scale"]}
-                     for e in lora_registry])
-
-
-@app.route("/api/queue_info")
-def queue_info():
-    with job_lock:
-        return jsonify({
-            "queue_size": len(processing_queue),
-            "processing": current_processing is not None,
-        })
-
-
-# =======================
-# Drawing API
-# =======================
-@app.route("/api/drawing/save", methods=["POST"])
-def save_drawing():
-    if gallery_enabled:
-        pw = request.json.get("password", "")
-        if pw != server_password:
-            return jsonify({"error": "Unauthorized"}), 403
-
-    import base64
-    data = request.json
-    img_data = data.get("image", "")
-    draw_type = data.get("type", "composite")
-    source_info = data.get("source", "")
-
-    if not img_data:
-        return jsonify({"error": "No image data"}), 400
-
-    if "," in img_data:
-        img_data = img_data.split(",", 1)[1]
-
-    drawing_id = uuid.uuid4().hex[:12]
-    path = TMP_DIR / f"draw_{drawing_id}.png"
-
-    with open(path, "wb") as f:
-        f.write(base64.b64decode(img_data))
-
-    bg_path = None
-    overlay_path = None
-    if draw_type == "draft":
-        bg_data = data.get("bg", "")
-        overlay_data = data.get("overlay", "")
-        if bg_data:
-            if "," in bg_data:
-                bg_data = bg_data.split(",", 1)[1]
-            bg_path = str(TMP_DIR / f"draw_{drawing_id}_bg.png")
-            with open(bg_path, "wb") as f:
-                f.write(base64.b64decode(bg_data))
-        if overlay_data:
-            if "," in overlay_data:
-                overlay_data = overlay_data.split(",", 1)[1]
-            overlay_path = str(TMP_DIR / f"draw_{drawing_id}_ov.png")
-            with open(overlay_path, "wb") as f:
-                f.write(base64.b64decode(overlay_data))
-
-    user_hash = get_user_hash()
-    drawings[drawing_id] = {
-        "user_hash": user_hash,
-        "created": time.time(),
-        "path": str(path),
-        "type": draw_type,
-        "source": source_info,
-        "bg_path": bg_path,
-        "overlay_path": overlay_path,
-    }
-    return jsonify({"drawing_id": drawing_id})
-
-
-@app.route("/api/drawing/<drawing_id>")
-def serve_drawing(drawing_id):
-    if gallery_enabled:
-        pw = request.args.get("password", "")
-        if pw != server_password:
-            return jsonify({"error": "Unauthorized"}), 403
-    d = drawings.get(drawing_id)
-    if not d:
-        return jsonify({"error": "Drawing not found"}), 404
-    if d["user_hash"] != get_user_hash():
-        return jsonify({"error": "Unauthorized"}), 403
-    if not os.path.exists(d["path"]):
-        return jsonify({"error": "File not found"}), 404
-    return send_file(d["path"], mimetype="image/png")
-
-
-@app.route("/api/drawing/<drawing_id>/bg")
-def serve_drawing_bg(drawing_id):
-    if gallery_enabled:
-        pw = request.args.get("password", "")
-        if pw != server_password:
-            return jsonify({"error": "Unauthorized"}), 403
-    d = drawings.get(drawing_id)
-    if not d:
-        return jsonify({"error": "Drawing not found"}), 404
-    if d["user_hash"] != get_user_hash():
-        return jsonify({"error": "Unauthorized"}), 403
-    bg = d.get("bg_path")
-    if not bg or not os.path.exists(bg):
-        return jsonify({"error": "BG not found"}), 404
-    return send_file(bg, mimetype="image/png")
-
-
-@app.route("/api/drawing/<drawing_id>/overlay")
-def serve_drawing_overlay(drawing_id):
-    if gallery_enabled:
-        pw = request.args.get("password", "")
-        if pw != server_password:
-            return jsonify({"error": "Unauthorized"}), 403
-    d = drawings.get(drawing_id)
-    if not d:
-        return jsonify({"error": "Drawing not found"}), 404
-    if d["user_hash"] != get_user_hash():
-        return jsonify({"error": "Unauthorized"}), 403
-    ov = d.get("overlay_path")
-    if not ov or not os.path.exists(ov):
-        return jsonify({"error": "Overlay not found"}), 404
-    return send_file(ov, mimetype="image/png")
-
-
-@app.route("/api/drawings")
-def list_drawings():
-    if gallery_enabled:
-        pw = request.args.get("password", "")
-        if pw != server_password:
-            return jsonify({"error": "Unauthorized"}), 403
-    user_hash = get_user_hash()
-    items = []
-    for did, d in drawings.items():
-        if d["user_hash"] != user_hash:
-            continue
-        items.append({
-            "drawing_id": did,
-            "created": d["created"],
-            "type": d["type"],
-            "source": d["source"],
-        })
-    items.sort(key=lambda x: x["created"], reverse=True)
-    return jsonify({"items": items})
-
-
-@app.route("/api/drawing/<drawing_id>", methods=["DELETE"])
-def delete_drawing(drawing_id):
-    if gallery_enabled:
-        pw = request.args.get("password", "")
-        if pw != server_password:
-            return jsonify({"error": "Unauthorized"}), 403
-    d = drawings.get(drawing_id)
-    if not d:
-        return jsonify({"error": "Drawing not found"}), 404
-    if d["user_hash"] != get_user_hash():
-        return jsonify({"error": "Unauthorized"}), 403
-    for key in ("path", "bg_path", "overlay_path"):
-        p = d.get(key)
-        if p:
-            try:
-                os.remove(p)
-            except OSError:
-                pass
-    del drawings[drawing_id]
-    return jsonify({"ok": True})
-
-
-# =======================
-# HTML Template — loaded from app_comfyui_template.html
-# =======================
-_TEMPLATE_PATH = Path(__file__).parent / "app_comfyui_template.html"
-try:
-    HTML_TEMPLATE = _TEMPLATE_PATH.read_text(encoding="utf-8")
-    print(f"[info] HTML template loaded: {_TEMPLATE_PATH}", file=sys.stderr)
-except FileNotFoundError:
-    print(f"[error] HTML template not found: {_TEMPLATE_PATH}", file=sys.stderr)
-    HTML_TEMPLATE = (
-        "<!DOCTYPE html><html><body>"
-        "<h1>Error: app_comfyui_template.html not found</h1>"
-        "</body></html>"
-    )
+HTML_TEMPLATE = common.load_html_template()
+
+register_routes(
+    server_title="ComfyUI-Nunchaku",
+    pre_resize_options=[{"value": "1m", "label": "1M pixels"}, {"value": "2m", "label": "2M pixels"}],
+    pre_resize_map={"1m": 1_000_000, "2m": 2_000_000},
+    default_pre_resize="1m",
+    has_preview=True,
+    get_total_steps=lambda: configured_steps,
+    prompt_default=PROMPT_DEFAULT,
+    html_template=HTML_TEMPLATE,
+)
 
 
 # =======================
 # Entry point
 # =======================
 def main():
-    global server_password, gallery_enabled, comfyui_url, configured_steps, configured_cfg
+    global comfyui_url, configured_steps, configured_cfg
 
     ap = argparse.ArgumentParser(description="Qwen Image Edit Web Server (ComfyUI Nunchaku backend)")
-    ap.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
-    ap.add_argument("--port", type=int, default=5000, help="Bind port (default: 5000)")
-    ap.add_argument("--password", default="password", help="Generation password (default: password)")
+    common.add_common_args(ap)
     ap.add_argument("--comfyui-url", default="http://127.0.0.1:8188",
                     help="ComfyUI API URL (default: http://127.0.0.1:8188)")
     ap.add_argument("--comfyui-path", default=None, metavar="DIR",
@@ -1219,28 +652,12 @@ def main():
                     help=f"Inference steps (default: {DEFAULT_STEPS})")
     ap.add_argument("--cfg", type=float, default=DEFAULT_CFG,
                     help=f"CFG scale (default: {DEFAULT_CFG})")
-    ap.add_argument("--gallery", action="store_true",
-                    help="Enable gallery mode (show generation history)")
-    ap.add_argument("--preset", action="append", default=[], metavar='"label::prompt"',
-                    help="Prompt preset button (repeatable). Format: label::prompt or just prompt")
     args = ap.parse_args()
 
-    server_password = args.password
-    gallery_enabled = args.gallery
+    common.apply_common_args(args)
     comfyui_url = args.comfyui_url.rstrip("/")
     configured_steps = args.steps
     configured_cfg = args.cfg
-
-    # Parse presets
-    global prompt_presets
-    for i, raw in enumerate(args.preset, 1):
-        if "::" in raw:
-            label, prompt_text = raw.split("::", 1)
-        else:
-            label, prompt_text = f"preset{i}", raw
-        prompt_presets.append({"label": label.strip(), "prompt": prompt_text.strip()})
-
-    TMP_DIR.mkdir(parents=True, exist_ok=True)
 
     # Check ComfyUI connectivity (retry once after 60s)
     print(f"[info] connecting to ComfyUI: {comfyui_url}", file=sys.stderr)
@@ -1333,29 +750,25 @@ def main():
             print("[warn] Restart ComfyUI manually and re-run this server.", file=sys.stderr)
 
     # Scan LoRA folder
-    lora_registry.extend(scan_lora_folder())
-    if lora_registry:
-        print(f"[info] {len(lora_registry)} LoRA(s) available", file=sys.stderr)
+    common.lora_registry.extend(scan_lora_folder())
+    if common.lora_registry:
+        print(f"[info] {len(common.lora_registry)} LoRA(s) available", file=sys.stderr)
 
     # Build model info for UI
-    model_info["pipeline"] = f"ComfyUI Nunchaku ({comfyui_url})"
-    model_info["transformer"] = Path(nunchaku_model_name).stem if nunchaku_model_name else "unknown"
-    model_info["text_encoder_class"] = clip_name
-    model_info["vae_class"] = vae_name
-    model_info["steps"] = f"{configured_steps} (CFG: {configured_cfg})"
-    if lora_registry:
-        model_info["loras"] = ", ".join(e["name"] for e in lora_registry)
+    common.model_info["pipeline"] = f"ComfyUI Nunchaku ({comfyui_url})"
+    common.model_info["transformer"] = Path(nunchaku_model_name).stem if nunchaku_model_name else "unknown"
+    common.model_info["text_encoder_class"] = clip_name
+    common.model_info["vae_class"] = vae_name
+    common.model_info["steps"] = f"{configured_steps} (CFG: {configured_cfg})"
+    if common.lora_registry:
+        common.model_info["loras"] = ", ".join(e["name"] for e in common.lora_registry)
 
-    # Start worker thread
-    threading.Thread(target=worker_loop, daemon=True).start()
-
-    # Start cleanup thread
-    threading.Thread(target=cleanup_loop, daemon=True).start()
+    common.start_server_threads(worker_loop)
 
     print(f"[info] server starting at http://{args.host}:{args.port}", file=sys.stderr)
     print(f"[info] password: {args.password}", file=sys.stderr)
 
-    app.run(host=args.host, port=args.port, threaded=True)
+    common.app.run(host=args.host, port=args.port, threaded=True)
 
 
 if __name__ == "__main__":
