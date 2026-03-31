@@ -608,6 +608,10 @@ def main():
     ap.add_argument("--comfyui-path", default=None, metavar="DIR",
                     help="ComfyUI installation directory. "
                          "Auto-registers server/LoRA/ in extra_model_paths.yaml")
+    ap.add_argument("--gguf-model", default=None, metavar="NAME",
+                    help="GGUF model name for UnetLoaderGGUF (auto-detected if omitted)")
+    ap.add_argument("--clip-model", default=None, metavar="NAME",
+                    help="GGUF CLIP model name for CLIPLoaderGGUF (auto-detected if omitted)")
     ap.add_argument("--steps", type=int, default=DEFAULT_STEPS,
                     help=f"Inference steps (default: {DEFAULT_STEPS})")
     ap.add_argument("--cfg", type=float, default=DEFAULT_CFG,
@@ -640,48 +644,57 @@ def main():
     if not comfyui_connected:
         sys.exit(1)
 
-    # Check required models (GGUF model + GGUF CLIP + VAE)
+    # Resolve models: CLI arg > workflow template default > auto-detect from ComfyUI
     print("[info] checking available models...", file=sys.stderr)
     available = comfyui_get_available_models()
 
-    gguf_name = WORKFLOW_TEMPLATE.get(WF_NODE["gguf_loader"], {}).get("inputs", {}).get("unet_name", "")
-    clip_gguf_name = WORKFLOW_TEMPLATE.get(WF_NODE["clip_loader_gguf"], {}).get("inputs", {}).get("clip_name", "")
+    wf_gguf_default = WORKFLOW_TEMPLATE.get(WF_NODE["gguf_loader"], {}).get("inputs", {}).get("unet_name", "")
+    wf_clip_default = WORKFLOW_TEMPLATE.get(WF_NODE["clip_loader_gguf"], {}).get("inputs", {}).get("clip_name", "")
     vae_name = WORKFLOW_TEMPLATE.get(WF_NODE["vae_loader"], {}).get("inputs", {}).get("vae_name", "")
 
-    model_download_urls = {
-        "gguf_models": [
-            "https://huggingface.co/Arunk25/Qwen-Image-Edit-Rapid-AIO-GGUF/resolve/main/v23/Qwen-Rapid-NSFW-v23_Q6_K.gguf",
-        ],
-        "clip_gguf_models": [
-            "https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.Q6_K.gguf",
-            "https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.mmproj-Q8_0.gguf (mmproj: place in same folder)",
-        ],
-        "vae_models": [
-            "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors",
-        ],
-    }
+    def _pick_model(cli_arg, wf_default, model_list, label):
+        """Select model: CLI arg > workflow default (if available) > first detected .gguf/.safetensors."""
+        if cli_arg:
+            if cli_arg in model_list:
+                return cli_arg
+            print(f"[error] {label}: --{label.lower().replace('(','').replace(')','')}-model '{cli_arg}' not found in ComfyUI", file=sys.stderr)
+            print(f"  Available: {model_list[:10]}", file=sys.stderr)
+            sys.exit(1)
+        if wf_default and wf_default in model_list:
+            return wf_default
+        candidates = [m for m in model_list if m.endswith((".gguf", ".safetensors"))]
+        if candidates:
+            picked = candidates[0]
+            if picked != wf_default:
+                print(f"[info] {label}: '{wf_default}' not found, using '{picked}'", file=sys.stderr)
+            return picked
+        return None
+
+    gguf_name = _pick_model(args.gguf_model, wf_gguf_default, available.get("gguf_models", []), "GGUF")
+    clip_gguf_name = _pick_model(args.clip_model, wf_clip_default, available.get("clip_gguf_models", []), "CLIP(GGUF)")
 
     missing = []
-    if gguf_name and gguf_name not in available.get("gguf_models", []):
-        missing.append(("GGUF", gguf_name, "gguf_models"))
-    if clip_gguf_name and clip_gguf_name not in available.get("clip_gguf_models", []):
-        missing.append(("CLIP(GGUF)", clip_gguf_name, "clip_gguf_models"))
+    if not gguf_name:
+        missing.append("GGUF (UnetLoaderGGUF) — no .gguf model detected")
+    if not clip_gguf_name:
+        missing.append("CLIP(GGUF) (CLIPLoaderGGUF) — no .gguf model detected")
     if vae_name and vae_name not in available.get("vae_models", []):
-        missing.append(("VAE", vae_name, "vae_models"))
+        missing.append(f"VAE: {vae_name}")
 
     if missing:
         print("[error] Required models not found in ComfyUI:", file=sys.stderr)
-        for label, name, model_type in missing:
-            print(f"  - {label}: {name}", file=sys.stderr)
-            urls = model_download_urls.get(model_type, [])
-            for url in urls:
-                print(f"    Download: {url}", file=sys.stderr)
+        for m in missing:
+            print(f"  - {m}", file=sys.stderr)
         print("[error] Place model files in ComfyUI's models directory.", file=sys.stderr)
         sys.exit(1)
-    else:
-        print(f"[info] GGUF: {gguf_name} ✓", file=sys.stderr)
-        print(f"[info] CLIP: {clip_gguf_name} ✓", file=sys.stderr)
-        print(f"[info] VAE:  {vae_name} ✓", file=sys.stderr)
+
+    # Apply selected models to workflow template
+    WORKFLOW_TEMPLATE[WF_NODE["gguf_loader"]]["inputs"]["unet_name"] = gguf_name
+    WORKFLOW_TEMPLATE[WF_NODE["clip_loader_gguf"]]["inputs"]["clip_name"] = clip_gguf_name
+
+    print(f"[info] GGUF: {gguf_name} ✓", file=sys.stderr)
+    print(f"[info] CLIP: {clip_gguf_name} ✓", file=sys.stderr)
+    print(f"[info] VAE:  {vae_name} ✓", file=sys.stderr)
 
     # Auto-register LoRA path
     yaml_modified = False
