@@ -766,9 +766,9 @@ pip install -U "flask>=3.0" pillow psutil accelerate transformers safetensors to
 pip install -U soundfile protobuf diskcache googletrans
 ```
 
-### llama-cpp-python のビルド（プロンプト拡張機能を使う場合）
+### llama-cpp-python のインストール（プロンプト拡張機能を使う場合）
 
-- https://note.com/gentle_murre488/n/ncc883fe5f413 (by shiba*2) 等を参照
+https://github.com/JamePeng/llama-cpp-python の Releases からビルド済みバイナリをインストールしてください。
 
 ### Nunchaku を導入する場合
 
