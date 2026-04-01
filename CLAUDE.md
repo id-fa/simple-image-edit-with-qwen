@@ -436,7 +436,7 @@ All scripts share this preprocessing flow:
 - LoRA: scans `server/LoRA/` folder, matches against ComfyUI's known LoRAs via `/object_info/LoraLoaderModelOnly`. Workflow has 3 `LoraLoaderModelOnly` slots chained (UNETLoader → slot1 → slot2 → slot3 → ModelSamplingAuraFlow); unused slots are removed from workflow and chain is rewired
 - `--comfyui-path`: auto-registers LoRA path in `extra_model_paths.yaml` and reboots ComfyUI via Manager API (`GET /manager/reboot`)
 - Steps/CFG: set directly on KSampler node
-- HTML template: shared `server/lib/app_template.html` (unified template for all 6 servers). Jinja2 variables: `server_title`, `pre_resize_options`, `has_preview` (ComfyUI-only: preview checkbox, preview area)
+- HTML template: shared `server/lib/app_template.html` (unified template for all 6 servers). Jinja2 variables: `server_title`, `pre_resize_options`, `has_preview` (ComfyUI-only: preview checkbox, preview area), `has_enhance` (ComfyUI-only: Enhance button)
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (UNET/CLIP/VAE), LoRA path registration
 
 **ComfyUI API Backend — GGUF** (`server/app_comfyui_gguf.py`):
@@ -458,7 +458,16 @@ All scripts share this preprocessing flow:
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (Nunchaku/CLIP/VAE), NunchakuQwenImageLoraStackV3 node availability
 - Shares `app_template.html` with all server variants
 
-**Gallery Persistence** (`server/gallery_db.py`):
+**Prompt Enhancement** (`server/lib/comfyui_enhance.py`):
+- Shared helper for all 3 ComfyUI servers. `run_enhance(upload_fn, submit_fn, get_history_fn, workflow_template, prompt_text, image_bytes)` runs the `enhance_prompt_api.json` workflow on ComfyUI
+- Workflow uses llama_cpp nodes: `llama_cpp_model_loader` (Qwen2.5-VL GGUF) → `llama_cpp_instruct_adv` (VLM inference) → `llama_cpp_unload_model` → `PreviewAny` (text output)
+- Image handling: if image provided, uploaded to ComfyUI; if not, a 256x256 white placeholder is uploaded to keep the workflow graph intact
+- Text extraction from ComfyUI history: tries `outputs["33"]["text"][0]` (PreviewAny), falls back to node 30 and other nodes
+- Polling: 2-second interval, 360-second timeout. Runs server-side in Flask request handler (no WebSocket needed)
+- Each ComfyUI server loads the workflow template at startup; if `enhance_prompt_api.json` not found, `HAS_ENHANCE=False` and the feature is disabled
+- Route `POST /api/enhance` registered conditionally via `enhance_fn` callback in `register_routes()`
+
+**Gallery Persistence** (`server/lib/gallery_db.py`):
 - Shared SQLite module used by all 6 web servers
 - `GalleryDB` class: thread-safe (new connection per operation), WAL mode
 - Tables: `gallery_jobs` (job_id, created, prompt, seed, t2i, input_count, user_hash, status, input_paths JSON, result_path), `drawings` (drawing_id, user_hash, created, type, source, path, bg_path, overlay_path)

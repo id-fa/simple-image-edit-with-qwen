@@ -768,14 +768,7 @@ pip install -U soundfile protobuf diskcache googletrans
 
 ### llama-cpp-python のビルド（プロンプト拡張機能を使う場合）
 
-```powershell
-set FORCE_CMAKE=1
-set CMAKE_ARGS=-DGGML_CUDA=on
-pip install llama-cpp-python --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu130
-```
-
-もしくはプレビルドバイナリからインストール:
-https://github.com/JamePeng/llama-cpp-python/releases
+- https://note.com/gentle_murre488/n/ncc883fe5f413 (by shiba*2) 等を参照
 
 ### Nunchaku を導入する場合
 
