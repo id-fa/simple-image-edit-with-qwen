@@ -407,6 +407,10 @@ button.cancel-btn:disabled { background: #4a4a5a; }
       <button type="button" id="translateEn">&rarr; EN</button>
       <button type="button" id="translateZh">&rarr; ZH</button>
       <button type="button" id="translateJa">&rarr; JA</button>
+{% if has_enhance %}
+      <span style="margin-left:8px; border-left:1px solid #3a3a4a; padding-left:10px;" class="de-group-label">Enhance:</span>
+      <button type="button" id="enhanceBtn">Enhance &rarr;</button>
+{% endif %}
     </div>
 
     <label for="pre_resize">Pre-resize</label>
@@ -705,6 +709,63 @@ async function doTranslate(target) {
 document.getElementById('translateEn').addEventListener('click', () => doTranslate('en'));
 document.getElementById('translateZh').addEventListener('click', () => doTranslate('zh-cn'));
 document.getElementById('translateJa').addEventListener('click', () => doTranslate('ja'));
+
+// Enhance prompt
+{% if has_enhance %}
+async function doEnhance() {
+  const promptEl = document.getElementById('prompt');
+  const text = promptEl.value.trim();
+  if (!text) { alert('Please enter a prompt to enhance / 拡張するプロンプトを入力してください'); return; }
+
+  const btns = document.querySelectorAll('.translate-row button');
+  btns.forEach(b => b.disabled = true);
+  const enhanceBtn = document.getElementById('enhanceBtn');
+  const origText = enhanceBtn.textContent;
+  enhanceBtn.textContent = 'Enhancing...';
+
+  try {
+    const fd = new FormData();
+    fd.append('prompt', text);
+
+    // Try to include Img1 image for context-aware enhancement
+    const image1Input = document.getElementById('image1');
+    const hasFile1 = image1Input && image1Input.files && image1Input.files[0];
+    if (hasFile1) {
+      fd.append('image', image1Input.files[0]);
+    } else if (selectedSlot1) {
+      // Fetch gallery/drawing image as blob
+      try {
+        const parts = selectedSlot1.split(':');
+        let imgUrl = '';
+        if (parts[0] === 'drawing') {
+          imgUrl = '/api/drawing/' + parts[1] + authQuery();
+        } else if (parts[1] === 'result') {
+          imgUrl = '/api/result/' + parts[0] + authQuery();
+        } else if (parts[1] === 'input') {
+          imgUrl = '/api/input/' + parts[0] + '/' + parts[2] + authQuery();
+        }
+        if (imgUrl) {
+          const imgResp = await fetch(imgUrl);
+          if (imgResp.ok) {
+            const blob = await imgResp.blob();
+            fd.append('image', blob, 'gallery_image.png');
+          }
+        }
+      } catch (e) { /* proceed without image */ }
+    }
+
+    const res = await fetch('/api/enhance', { method: 'POST', body: fd });
+    const d = await res.json();
+    if (d.error) { alert(d.error); return; }
+    promptEl.value = d.enhanced;
+  } catch (e) { alert('Enhance error: ' + e.message); }
+  finally {
+    btns.forEach(b => b.disabled = false);
+    enhanceBtn.textContent = origText;
+  }
+}
+document.getElementById('enhanceBtn').addEventListener('click', doEnhance);
+{% endif %}
 
 // Preset buttons
 document.querySelectorAll('.preset-btn').forEach(btn => {

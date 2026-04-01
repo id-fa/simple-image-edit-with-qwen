@@ -24,3 +24,13 @@ googletrans
 # Install example for Nunchaku:
 #   pip install "diffusers>=0.36.0,<0.37.0"
 #   pip install <nunchaku .whl URL>
+
+# Prompt enhancement (optional, for ComfyUI servers with enhance_prompt_api.json)
+# Requires ComfyUI with llama_cpp nodes + Qwen2.5-VL model installed.
+# diskcache
+# scipy
+# numpy
+# pillow  (already listed above)
+# gguf    (already listed above for GGUF server)
+# tqdm
+# llama-cpp-python

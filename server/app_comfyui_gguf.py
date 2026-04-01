@@ -68,6 +68,19 @@ T2I_SIZE = (1024, 1024)
 LORA_DIR = Path(__file__).parent / "LoRA"
 
 # =======================
+# Enhance prompt workflow (optional)
+# =======================
+_ENHANCE_WF_PATH = Path(__file__).parent / "comfyui_workflow" / "enhance_prompt_api.json"
+try:
+    with open(_ENHANCE_WF_PATH, encoding="utf-8") as _f:
+        ENHANCE_WF_TEMPLATE = json.load(_f)
+    HAS_ENHANCE = True
+    print(f"[info] enhance workflow loaded: {_ENHANCE_WF_PATH}", file=sys.stderr)
+except FileNotFoundError:
+    ENHANCE_WF_TEMPLATE = {}
+    HAS_ENHANCE = False
+
+# =======================
 # Workflow template (loaded from file)
 # =======================
 _WORKFLOW_PATH = Path(__file__).parent / "comfyui_workflow" / "comfyui_qwen_image_edit_AIO_v23_gguf_api.json"
@@ -583,12 +596,22 @@ def worker_loop():
 # =======================
 HTML_TEMPLATE = common.load_html_template()
 
+if HAS_ENHANCE:
+    from lib.comfyui_enhance import run_enhance
+    def _enhance_prompt(prompt_text, image_bytes):
+        return run_enhance(
+            comfyui_upload_image, comfyui_submit_prompt, comfyui_get_history,
+            ENHANCE_WF_TEMPLATE, prompt_text, image_bytes,
+        )
+
 register_routes(
     server_title="ComfyUI-GGUF",
     pre_resize_options=[{"value": "1m", "label": "1M pixels"}, {"value": "2m", "label": "2M pixels"}],
     pre_resize_map={"1m": 1_000_000, "2m": 2_000_000},
     default_pre_resize="1m",
     has_preview=True,
+    has_enhance=HAS_ENHANCE,
+    enhance_fn=_enhance_prompt if HAS_ENHANCE else None,
     get_total_steps=lambda: configured_steps,
     prompt_default=PROMPT_DEFAULT,
     html_template=HTML_TEMPLATE,

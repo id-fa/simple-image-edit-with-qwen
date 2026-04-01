@@ -161,6 +161,19 @@ python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
 
 モデルによっては英語や中国語のプロンプトのほうが良い結果が出ることがあるため、翻訳機能が用意されています。
 
+### プロンプト拡張（Enhance）
+
+ComfyUI版サーバーのみ。プロンプト欄下部の **Enhance →** ボタンで、短いプロンプトをローカルVLM（Qwen2.5-VL via llama_cpp）で詳細なプロンプトに拡張できます。
+
+- Img1 に画像が設定されている場合、VLMが画像の内容を解析して文脈に合ったプロンプトを生成します
+- 画像がない場合（t2iモード等）はテキストのみで拡張します
+- 拡張結果はプロンプト欄に反映され、生成前に編集可能です
+- `server/comfyui_workflow/enhance_prompt_api.json` が存在しない場合、ボタンは非表示になります
+- ComfyUI に llama_cpp カスタムノード (`ComfyUI-llama-cpp_vlm`) と Qwen2.5-VL GGUF モデルが必要です
+- 必要なモデル（ComfyUI の `models/text_encoders/` に配置）:
+  - https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.Q6_K.gguf
+  - https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.mmproj-Q8_0.gguf (mmproj: 同じフォルダに配置)
+
 ---
 
 ## 連続修正モード (Continuous Mode)
@@ -526,6 +539,19 @@ Translation buttons below the prompt field translate the current prompt.
 
 Translation is provided because some models produce better results with English or Chinese prompts.
 
+### Prompt Enhancement (Enhance)
+
+ComfyUI servers only. The **Enhance →** button expands a short prompt into a detailed one using a local VLM (Qwen2.5-VL via llama_cpp).
+
+- If Img1 is set, the VLM analyzes the image to generate context-aware prompts
+- Without an image (e.g. t2i mode), enhancement is text-only
+- The result is placed in the prompt field and can be edited before generating
+- The button is hidden if `server/comfyui_workflow/enhance_prompt_api.json` does not exist
+- Requires llama_cpp custom node (`ComfyUI-llama-cpp_vlm`) and Qwen2.5-VL GGUF model in ComfyUI
+- Required models (place in ComfyUI `models/text_encoders/`):
+  - https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.Q6_K.gguf
+  - https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.mmproj-Q8_0.gguf (mmproj: place in same folder)
+
 ---
 
 ## Continuous Mode
@@ -726,3 +752,62 @@ Error messages are displayed in both Japanese and English.
 |-----|----------------------|
 | `Esc` | Close editor / Cancel paste |
 | `Enter` | Confirm paste |
+
+---
+
+## インストール / Installation
+
+> **参考:** `notebooks/` ディレクトリに Google Colab / Paperspace 用の Jupyter Notebook があります。クラウド環境でのセットアップ手順の参考にしてください。
+
+### ライブラリ導入
+
+```powershell
+pip install -U "flask>=3.0" pillow psutil accelerate transformers safetensors torch torchvision torchaudio diffusers gguf --extra-index-url https://download.pytorch.org/whl/cu130
+pip install -U soundfile protobuf diskcache googletrans
+```
+
+### llama-cpp-python のビルド（プロンプト拡張機能を使う場合）
+
+```powershell
+set FORCE_CMAKE=1
+set CMAKE_ARGS=-DGGML_CUDA=on
+pip install llama-cpp-python --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu130
+```
+
+もしくはプレビルドバイナリからインストール:
+https://github.com/JamePeng/llama-cpp-python/releases
+
+### Nunchaku を導入する場合
+
+```powershell
+pip install -U "diffusers>=0.36.0,<0.37.0"
+pip install -U https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/nunchaku-1.2.1+cu13.0torch2.10-cp311-cp311-win_amd64.whl
+```
+
+> Windows、Python 3.11、Torch 2.10 + CUDA 13.0 の場合の例です。環境に合わせて .whl を選択してください。
+
+### ComfyUI インストール
+
+```powershell
+git clone https://github.com/comfyanonymous/ComfyUI.git
+cd ComfyUI
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu130
+```
+
+### ComfyUI カスタムノードインストール
+
+```powershell
+cd custom_nodes
+git clone https://github.com/ltdrdata/ComfyUI-Manager.git
+git clone https://github.com/city96/ComfyUI-GGUF.git
+git clone https://github.com/id-fa/ComfyUI-llama-cpp_vlm.git
+git clone https://github.com/nunchaku-ai/ComfyUI-nunchaku.git
+git clone https://github.com/ussoewwin/ComfyUI-QwenImageLoraLoader.git
+
+```
+
+| ノード | 用途 |
+|--------|------|
+| **ComfyUI-Manager** | ノード管理・ComfyUI再起動API |
+| **ComfyUI-GGUF** | GGUF量子化モデルのロード (`UnetLoaderGGUF`, `CLIPLoaderGGUF`) |
+| **ComfyUI-llama-cpp_vlm** | プロンプト拡張用ローカルVLM (`llama_cpp_model_loader`, `llama_cpp_instruct_adv` 等) |

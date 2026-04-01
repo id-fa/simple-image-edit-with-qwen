@@ -32,11 +32,13 @@ Python scripts for AI-powered image editing using diffusion models:
 17. **server/lib/server_common.py** - Shared server core: global state, user hash, gallery ref resolution, cleanup loop, argparse helpers, template loading
 18. **server/lib/server_routes.py** - Shared Flask route handlers: all API routes (submit, status, cancel, result, translate, gallery, drawing, etc.)
 19. **server/lib/image_utils.py** - Shared image preprocessing (round_up, pre_resize, fit_and_align) and LoRA argument parsing for diffusers servers
+20. **server/lib/comfyui_enhance.py** - Shared ComfyUI prompt enhancement helper (runs enhance workflow, extracts text output)
 
 ### Workflow Templates (`server/comfyui_workflow/`)
 20. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_api.json** - ComfyUI API format workflow for Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui.py)
 21. **server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_api.json** - ComfyUI API format workflow for Nunchaku Qwen-Image-Edit-2509 Lightning (used by app_comfyui_nunchaku.py)
 22. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_gguf_api.json** - ComfyUI API format workflow for GGUF Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui_gguf.py)
+23. **server/comfyui_workflow/enhance_prompt_api.json** - ComfyUI API format workflow for prompt enhancement via llama_cpp VLM (used by all 3 ComfyUI servers)
 
 Image editing scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All image scripts support `--t2i` mode for text-to-image generation. The video script (`simple_i2v_ltx2_distilled.py`) supports i2v (image-to-video), flf2v (first+last frame to video via `--ref`), and t2v (text-to-video via `--t2i`). Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
@@ -241,6 +243,7 @@ python app_comfyui_gguf.py --preset "高画質化::Enhance quality." --preset "�
 - Prompt presets (`--preset`): Configurable buttons above prompt textarea. Click to fill prompt with preset text. Confirmation dialog when replacing non-empty prompt
 - Prompt clear button (x) next to label for clearing prompt text
 - Prompt translation (googletrans): `Translate:` label with `-> EN` / `-> ZH` / `-> JA` buttons
+- Prompt enhancement (ComfyUI only): `Enhance` button runs a local VLM (llama_cpp Qwen2.5-VL) to expand short prompts into detailed ones. Uses `enhance_prompt_api.json` workflow. Sends current Img1 for context-aware enhancement. Button hidden if workflow file not found
 - File input clear buttons (x) for resetting image selections, drag-and-drop image upload
 - Continuous mode: Checkbox to auto-set generation result as Img1 for iterative editing. Result area also shows Img1/Img2 radio buttons for immediate reuse without waiting for gallery refresh
 - Preview during generation (ComfyUI only): Checkbox to show/hide real-time preview images from ComfyUI's WebSocket binary frames. Requires ComfyUI preview method enabled (Settings → Preview Method). Preview image displayed below progress bar, cleared on completion
@@ -465,7 +468,7 @@ All scripts share this preprocessing flow:
 
 **Shared Server Modules** (`server/server_common.py`, `server/server_routes.py`, `server/image_utils.py`):
 - `server_common.py`: Global state (Flask app, job queue, locks, config), `get_user_hash()`, `resolve_gallery_ref()`, `cleanup_loop()`, `load_html_template()`, `add_common_args()`/`apply_common_args()`, `persist_job_to_db()`, `start_server_threads()`
-- `server_routes.py`: `register_routes()` — all shared Flask routes (submit, status, cancel, result, translate, gallery, gallery_delete, serve_input, model_info, loras, queue_info, drawing CRUD). Parameterized by `server_title`, `pre_resize_options`, `pre_resize_map`, `has_preview`, `get_total_steps`, `prompt_default`
+- `server_routes.py`: `register_routes()` — all shared Flask routes (submit, status, cancel, result, translate, enhance, gallery, gallery_delete, serve_input, model_info, loras, queue_info, drawing CRUD). Parameterized by `server_title`, `pre_resize_options`, `pre_resize_map`, `has_preview`, `has_enhance`, `enhance_fn`, `get_total_steps`, `prompt_default`
 - `image_utils.py`: `round_up()`, `pre_resize_to_total_pixels()`, `fit_and_align()`, `preprocess_image()`, `parse_lora_args()` — used by diffusers servers only (ComfyUI servers have inline image processing)
 - Each server script keeps only: fixed constants, pipeline/workflow management, inference/worker loop, and `main()` with server-specific args
 

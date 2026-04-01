@@ -1,0 +1,128 @@
+{
+  "12": {
+    "inputs": {
+      "image": "sample.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "画像を読み込む"
+    }
+  },
+  "30": {
+    "inputs": {
+      "any": [
+        "41",
+        0
+      ]
+    },
+    "class_type": "llama_cpp_unload_model",
+    "_meta": {
+      "title": "Llama-cpp Unload Model"
+    }
+  },
+  "33": {
+    "inputs": {
+      "preview_markdown": "Enhance the background of the image to add a mystical forest setting with glowing mushrooms and floating leaves.",
+      "preview_text": "Enhance the background of the image to add a mystical forest setting with glowing mushrooms and floating leaves.",
+      "previewMode": null,
+      "source": [
+        "30",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "プレビュー任意"
+    }
+  },
+  "34": {
+    "inputs": {
+      "preset": "Qwen-Image-Edit 2511"
+    },
+    "class_type": "PromptEnhancerPreset",
+    "_meta": {
+      "title": "Prompt Enhancer Preset"
+    }
+  },
+  "35": {
+    "inputs": {
+      "value": "enhance background"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Prompt"
+    }
+  },
+  "40": {
+    "inputs": {
+      "model": "Qwen2.5-VL-7B-Instruct-heretic.Q6_K.gguf",
+      "mmproj": "Qwen2.5-VL-7B-Instruct-heretic.mmproj-Q8_0.gguf",
+      "chat_handler": "Qwen2.5-VL",
+      "n_ctx": 8192,
+      "vram_limit": 1,
+      "image_min_tokens": 0,
+      "image_max_tokens": 0
+    },
+    "class_type": "llama_cpp_model_loader",
+    "_meta": {
+      "title": "Llama-cpp Model Loader"
+    }
+  },
+  "41": {
+    "inputs": {
+      "preset_prompt": "Empty - Nothing",
+      "custom_prompt": [
+        "34",
+        0
+      ],
+      "system_prompt": [
+        "35",
+        0
+      ],
+      "inference_mode": "one by one",
+      "max_frames": 24,
+      "max_size": 256,
+      "seed": 524083631176765,
+      "force_offload": false,
+      "save_states": false,
+      "llama_model": [
+        "40",
+        0
+      ],
+      "parameters": [
+        "42",
+        0
+      ],
+      "images": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "llama_cpp_instruct_adv",
+    "_meta": {
+      "title": "Llama-cpp Instruct"
+    }
+  },
+  "42": {
+    "inputs": {
+      "max_tokens": 1024,
+      "top_k": 30,
+      "top_p": 0.9,
+      "min_p": 0.05,
+      "typical_p": 1,
+      "temperature": 0.8,
+      "repeat_penalty": 1,
+      "frequency_penalty": 0,
+      "presence_penalty": 1,
+      "mirostat_mode": 0,
+      "mirostat_eta": 0.1,
+      "mirostat_tau": 5,
+      "stop_words": "<|endoftext|>, <|im_start|>, <|im_end|>",
+      "state_uid": -1
+    },
+    "class_type": "llama_cpp_parameters",
+    "_meta": {
+      "title": "Llama-cpp Parameters"
+    }
+  }
+}

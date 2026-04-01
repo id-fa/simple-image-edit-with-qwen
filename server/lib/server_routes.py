@@ -35,6 +35,8 @@ def register_routes(
     pre_resize_map: dict[str, int],
     default_pre_resize: str,
     has_preview: bool = False,
+    has_enhance: bool = False,
+    enhance_fn: callable = None,
     get_total_steps: callable,
     prompt_default: str,
     html_template: str,
@@ -51,6 +53,7 @@ def register_routes(
             server_title=server_title,
             pre_resize_options=pre_resize_options,
             has_preview=has_preview,
+            has_enhance=has_enhance,
         )
 
     @app.route("/api/login", methods=["POST"])
@@ -189,6 +192,22 @@ def register_routes(
             if preview_data[:4] == b'\x89PNG':
                 content_type = "image/png"
             return send_file(io.BytesIO(preview_data), mimetype=content_type)
+
+    if has_enhance and enhance_fn:
+        @app.route("/api/enhance", methods=["POST"])
+        def enhance_prompt():
+            prompt_text = request.form.get("prompt", "").strip()
+            if not prompt_text:
+                return jsonify({"error": "プロンプトが空です / Prompt is empty"}), 400
+            image_bytes = None
+            f = request.files.get("image")
+            if f and f.filename:
+                image_bytes = f.read()
+            try:
+                enhanced = enhance_fn(prompt_text, image_bytes)
+                return jsonify({"enhanced": enhanced})
+            except Exception as ex:
+                return jsonify({"error": f"プロンプト拡張に失敗しました / Enhance failed: {ex}"}), 500
 
     @app.route("/api/cancel/<job_id>", methods=["POST"])
     def cancel(job_id):
