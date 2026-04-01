@@ -59,7 +59,7 @@
       "mmproj": "Qwen2.5-VL-7B-Instruct-heretic.mmproj-Q8_0.gguf",
       "chat_handler": "Qwen2.5-VL",
       "n_ctx": 8192,
-      "vram_limit": 1,
+      "vram_limit": 4,
       "image_min_tokens": 0,
       "image_max_tokens": 0
     },

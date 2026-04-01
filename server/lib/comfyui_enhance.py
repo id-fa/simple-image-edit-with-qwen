@@ -19,7 +19,7 @@ def run_enhance(
     workflow_template: dict,
     prompt_text: str,
     image_bytes: bytes | None = None,
-    timeout: float = 120,
+    timeout: float = 360,
 ) -> str:
     """Run enhance prompt workflow on ComfyUI and return enhanced text.
 
