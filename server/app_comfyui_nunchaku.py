@@ -239,6 +239,8 @@ def _wait_ws(prompt_id: str, job_id: str, timeout: float) -> dict | None:
     done = False
     error_msg = None
     start = time.time()
+    ws_error_count = 0
+    WS_ERROR_LIMIT = 10
 
     try:
         while time.time() - start < timeout:
@@ -248,6 +250,7 @@ def _wait_ws(prompt_id: str, job_id: str, timeout: float) -> dict | None:
 
             try:
                 raw = ws.recv()
+                ws_error_count = 0
                 if not raw:
                     continue
                 if isinstance(raw, bytes):
@@ -285,7 +288,10 @@ def _wait_ws(prompt_id: str, job_id: str, timeout: float) -> dict | None:
             except ws_lib.WebSocketTimeoutException:
                 continue
             except Exception as ex:
-                print(f"[warn] WS recv error: {ex}", file=sys.stderr)
+                ws_error_count += 1
+                print(f"[warn] WS recv error ({ws_error_count}/{WS_ERROR_LIMIT}): {ex}", file=sys.stderr)
+                if ws_error_count >= WS_ERROR_LIMIT:
+                    raise RuntimeError("ComfyUI との接続が切断されました / ComfyUI connection lost")
                 time.sleep(1)
     finally:
         try:

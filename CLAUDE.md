@@ -38,7 +38,7 @@ Python scripts for AI-powered image editing using diffusion models:
 20. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_api.json** - ComfyUI API format workflow for Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui.py)
 21. **server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_api.json** - ComfyUI API format workflow for Nunchaku Qwen-Image-Edit-2509 Lightning (used by app_comfyui_nunchaku.py)
 22. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_gguf_api.json** - ComfyUI API format workflow for GGUF Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui_gguf.py)
-23. **server/comfyui_workflow/enhance_prompt_api.json** - ComfyUI API format workflow for prompt enhancement via llama_cpp VLM (used by all 3 ComfyUI servers)
+23. **server/comfyui_workflow/enhance_prompt_api.json** - ComfyUI API format workflow for prompt enhancement via QwenVL GGUF (used by all 3 ComfyUI servers)
 
 Image editing scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All image scripts support `--t2i` mode for text-to-image generation. The video script (`simple_i2v_ltx2_distilled.py`) supports i2v (image-to-video), flf2v (first+last frame to video via `--ref`), and t2v (text-to-video via `--t2i`). Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
@@ -243,7 +243,7 @@ python app_comfyui_gguf.py --preset "高画質化::Enhance quality." --preset "�
 - Prompt presets (`--preset`): Configurable buttons above prompt textarea. Click to fill prompt with preset text. Confirmation dialog when replacing non-empty prompt
 - Prompt clear button (x) next to label for clearing prompt text
 - Prompt translation (googletrans): `Translate:` label with `-> EN` / `-> ZH` / `-> JA` buttons
-- Prompt enhancement (ComfyUI only): `Enhance` button runs a local VLM (llama_cpp Qwen2.5-VL) to expand short prompts into detailed ones. Uses `enhance_prompt_api.json` workflow. Sends current Img1 for context-aware enhancement. Button hidden if workflow file not found
+- Prompt enhancement (ComfyUI only): `Enhance` button runs a local VLM (QwenVL GGUF via AILab_QwenVL_GGUF_Advanced node) to expand short prompts into detailed ones. Uses `enhance_prompt_api.json` workflow. Sends current Img1 for context-aware enhancement. Button hidden if workflow file not found
 - File input clear buttons (x) for resetting image selections, drag-and-drop image upload
 - Continuous mode: Checkbox to auto-set generation result as Img1 for iterative editing. Result area also shows Img1/Img2 radio buttons for immediate reuse without waiting for gallery refresh
 - Preview during generation (ComfyUI only): Checkbox to show/hide real-time preview images from ComfyUI's WebSocket binary frames. Requires ComfyUI preview method enabled (Settings → Preview Method). Preview image displayed below progress bar, cleared on completion
@@ -460,7 +460,7 @@ All scripts share this preprocessing flow:
 
 **Prompt Enhancement** (`server/lib/comfyui_enhance.py`):
 - Shared helper for all 3 ComfyUI servers. `run_enhance(upload_fn, submit_fn, get_history_fn, workflow_template, prompt_text, image_bytes)` runs the `enhance_prompt_api.json` workflow on ComfyUI
-- Workflow uses llama_cpp nodes: `llama_cpp_model_loader` (Qwen2.5-VL GGUF) → `llama_cpp_instruct_adv` (VLM inference) → `llama_cpp_unload_model` → `PreviewAny` (text output)
+- Workflow uses `AILab_QwenVL_GGUF_Advanced` node (Huihui-Qwen3.5-4B-abliterated GGUF) → `PreviewAny` (text output)
 - Image handling: if image provided, uploaded to ComfyUI; if not, a 256x256 white placeholder is uploaded to keep the workflow graph intact
 - Text extraction from ComfyUI history: tries `outputs["33"]["text"][0]` (PreviewAny), falls back to node 30 and other nodes
 - Polling: 2-second interval, 360-second timeout. Runs server-side in Flask request handler (no WebSocket needed)
