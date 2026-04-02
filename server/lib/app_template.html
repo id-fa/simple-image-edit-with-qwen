@@ -125,10 +125,11 @@ button.cancel-btn:disabled { background: #4a4a5a; }
 }
 .preset-btn:hover { background: #3a3a4a; }
 .prompt-clear-btn {
-  background: none; border: 1px solid #4a4a5a; color: #9ca3af; cursor: pointer;
-  font-size: 0.85rem; padding: 0 5px; border-radius: 3px; line-height: 1.2;
+  padding: 3px 10px; font-size: 0.75rem;
+  background: #1a1a2a; border: 1px solid #555; color: #9ca3af; cursor: pointer;
+  border-radius: 4px; transition: background 0.2s;
 }
-.prompt-clear-btn:hover { color: #ef4444; border-color: #ef4444; }
+.prompt-clear-btn:hover { background: #2a1a1a; color: #ef4444; border-color: #ef4444; }
 .translate-row {
   display: flex; gap: 8px; margin-top: 6px; align-items: center;
 }
@@ -392,15 +393,15 @@ button.cancel-btn:disabled { background: #4a4a5a; }
 
     <div style="display:flex;align-items:center;gap:6px;">
       <label for="prompt" style="margin:0;">Prompt (blank = default)</label>
-      <button type="button" class="prompt-clear-btn" onclick="document.getElementById('prompt').value=''" title="Clear prompt">&times;</button>
     </div>
-    {% if prompt_presets %}
     <div class="preset-row">
+      {% if prompt_presets %}
       {% for p in prompt_presets %}
       <button type="button" class="preset-btn" data-prompt="{{ p.prompt }}">{{ p.label }}</button>
       {% endfor %}
+      {% endif %}
+      <button type="button" class="prompt-clear-btn" onclick="document.getElementById('prompt').value=''" title="Clear prompt">CLEAR</button>
     </div>
-    {% endif %}
     <textarea id="prompt" name="prompt" placeholder="Fix visible seams and misalignment..."></textarea>
     <div class="translate-row">
       <span class="de-group-label" style="margin-right:2px;">Translate:</span>
@@ -1940,15 +1941,7 @@ function renderGalleryItem(item) {
     + '</div>';
 }
 
-function saveSelections() {
-  const r1 = document.querySelector('input[name="gallery_slot1"]:checked');
-  const r2 = document.querySelector('input[name="gallery_slot2"]:checked');
-  selectedSlot1 = r1 ? r1.value : null;
-  selectedSlot2 = r2 ? r2.value : null;
-}
-
 function renderGallery(items) {
-  saveSelections();
   const container = document.getElementById('galleryList');
   if (!container) return;
   if (items.length === 0) {

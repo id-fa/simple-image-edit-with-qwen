@@ -1,7 +1,7 @@
 """Shared ComfyUI prompt enhancement helper.
 
 Runs the enhance_prompt_api.json workflow on ComfyUI to expand
-a short prompt into a detailed one using a local VLM (llama_cpp).
+a short prompt into a detailed one using a local VLM (QwenVL GGUF).
 """
 
 from __future__ import annotations
@@ -80,11 +80,6 @@ def run_enhance(
 
         # Extract text from PreviewAny (node 33)
         text = _extract_text(outputs, "33")
-        if text:
-            return text
-
-        # Fallback: llama_cpp_unload_model (node 30)
-        text = _extract_text(outputs, "30")
         if text:
             return text
 
