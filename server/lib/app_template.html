@@ -141,6 +141,8 @@ button.cancel-btn:disabled { background: #4a4a5a; }
 }
 .translate-row button:hover { background: #3a3a4a; }
 .translate-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+#enhanceUndoBtn { background: #2a1a1a; border-color: #6b3a3a; color: #f0a0a0; }
+#enhanceUndoBtn:hover { background: #3a2020; }
 .image-slot { margin-top: 12px; }
 .file-row { display: flex; gap: 6px; align-items: center; }
 .file-row input[type="file"] { flex: 1; }
@@ -411,6 +413,7 @@ button.cancel-btn:disabled { background: #4a4a5a; }
 {% if has_enhance %}
       <span style="margin-left:8px; border-left:1px solid #3a3a4a; padding-left:10px;" class="de-group-label">Enhance:</span>
       <button type="button" id="enhanceBtn">Enhance &rarr;</button>
+      <button type="button" id="enhanceUndoBtn" style="display:none;" title="Enhance前のプロンプトに戻す / Revert to pre-enhance prompt">Undo</button>
 {% endif %}
     </div>
 
@@ -621,7 +624,7 @@ fetch('/api/loras').then(r => r.json()).then(loras => {
     html += '<div class="lora-item">'
       + '<input type="checkbox" id="' + id + '" data-lora="' + lora.name + '">'
       + '<label class="lora-name" for="' + id + '">' + lora.name + '</label>'
-      + '<input type="range" min="0" max="2" step="0.05" value="' + lora.default_scale + '" '
+      + '<input type="range" min="-2" max="2" step="0.05" value="' + lora.default_scale + '" '
       + 'id="' + id + '_scale" oninput="this.nextElementSibling.textContent=this.value">'
       + '<span class="lora-scale-val">' + lora.default_scale + '</span>'
       + '</div>';
@@ -713,6 +716,8 @@ document.getElementById('translateJa').addEventListener('click', () => doTransla
 
 // Enhance prompt
 {% if has_enhance %}
+let preEnhancePrompt = null;
+
 async function doEnhance() {
   const promptEl = document.getElementById('prompt');
   const text = promptEl.value.trim();
@@ -758,7 +763,9 @@ async function doEnhance() {
     const res = await fetch('/api/enhance', { method: 'POST', body: fd });
     const d = await res.json();
     if (d.error) { alert(d.error); return; }
+    preEnhancePrompt = text;
     promptEl.value = d.enhanced;
+    document.getElementById('enhanceUndoBtn').style.display = '';
   } catch (e) { alert('Enhance error: ' + e.message); }
   finally {
     btns.forEach(b => b.disabled = false);
@@ -766,6 +773,13 @@ async function doEnhance() {
   }
 }
 document.getElementById('enhanceBtn').addEventListener('click', doEnhance);
+document.getElementById('enhanceUndoBtn').addEventListener('click', () => {
+  if (preEnhancePrompt !== null) {
+    document.getElementById('prompt').value = preEnhancePrompt;
+    preEnhancePrompt = null;
+    document.getElementById('enhanceUndoBtn').style.display = 'none';
+  }
+});
 {% endif %}
 
 // Preset buttons
