@@ -14,7 +14,7 @@
       "preview_text": "",
       "previewMode": null,
       "source": [
-        "53",
+        "58",
         0
       ]
     },
@@ -30,41 +30,6 @@
     "class_type": "PrimitiveStringMultiline",
     "_meta": {
       "title": "User Prompt"
-    }
-  },
-  "53": {
-    "inputs": {
-      "model_name": "Huihui-Qwen3.5-4B-abliterated.Q8_0.gguf",
-      "device": "auto",
-      "preset_prompt": "🪄 Prompt Refine & Expand",
-      "custom_prompt": [
-        "54",
-        0
-      ],
-      "max_tokens": 1024,
-      "temperature": 0.6,
-      "top_p": 0.9,
-      "repetition_penalty": 1.2,
-      "frame_count": 16,
-      "ctx": 8192,
-      "n_batch": 512,
-      "gpu_layers": -1,
-      "image_max_tokens": 8192,
-      "image_min_tokens": 1024,
-      "top_k": 0,
-      "pool_size": 4194304,
-      "enable_thinking": false,
-      "stop_words": "<|endoftext|>, <|im_start|>, <|im_end|>",
-      "keep_model_loaded": false,
-      "seed": 1881195694,
-      "image": [
-        "12",
-        0
-      ]
-    },
-    "class_type": "AILab_QwenVL_GGUF_Advanced",
-    "_meta": {
-      "title": "QwenVL Advanced (GGUF)"
     }
   },
   "54": {
@@ -91,6 +56,41 @@
     "class_type": "PrimitiveStringMultiline",
     "_meta": {
       "title": "System Prompt"
+    }
+  },
+  "58": {
+    "inputs": {
+      "model_name": "qwen3.5-9b-null-space-abliterated-q8_0.gguf",
+      "device": "auto",
+      "preset_prompt": "🪄 Prompt Refine & Expand",
+      "custom_prompt": [
+        "54",
+        0
+      ],
+      "max_tokens": 32768,
+      "temperature": 0.6,
+      "top_p": 0.9,
+      "repetition_penalty": 1.2,
+      "frame_count": 16,
+      "ctx": 8192,
+      "n_batch": 8192,
+      "gpu_layers": -1,
+      "image_max_tokens": 8192,
+      "image_min_tokens": 1024,
+      "top_k": 0,
+      "pool_size": 4194304,
+      "enable_thinking": false,
+      "stop_words": "<|endoftext|>, <|im_start|>, <|im_end|>",
+      "keep_model_loaded": false,
+      "seed": 2616416516,
+      "image": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "QwenVL-F_GGUF_Advanced",
+    "_meta": {
+      "title": "QwenVL-F Advanced (GGUF)"
     }
   }
 }

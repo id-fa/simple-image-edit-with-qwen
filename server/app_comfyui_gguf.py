@@ -655,7 +655,7 @@ def main():
     configured_cfg = args.cfg
 
     if args.enhance_model and HAS_ENHANCE:
-        ENHANCE_WF_TEMPLATE["53"]["inputs"]["model_name"] = args.enhance_model
+        ENHANCE_WF_TEMPLATE["58"]["inputs"]["model_name"] = args.enhance_model
         print(f"[info] enhance model: {args.enhance_model}", file=sys.stderr)
 
     # Check ComfyUI connectivity (retry once after 60s)
