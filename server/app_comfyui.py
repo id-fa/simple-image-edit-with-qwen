@@ -637,12 +637,18 @@ def main():
                     help=f"Inference steps (default: {DEFAULT_STEPS})")
     ap.add_argument("--cfg", type=float, default=DEFAULT_CFG,
                     help=f"CFG scale (default: {DEFAULT_CFG})")
+    ap.add_argument("--enhance-model", default=None, metavar="NAME",
+                    help="GGUF model name for enhance prompt (overrides workflow default)")
     args = ap.parse_args()
 
     common.apply_common_args(args)
     comfyui_url = args.comfyui_url.rstrip("/")
     configured_steps = args.steps
     configured_cfg = args.cfg
+
+    if args.enhance_model and HAS_ENHANCE:
+        ENHANCE_WF_TEMPLATE["53"]["inputs"]["model_name"] = args.enhance_model
+        print(f"[info] enhance model: {args.enhance_model}", file=sys.stderr)
 
     # Check ComfyUI connectivity (retry once after 60s)
     print(f"[info] connecting to ComfyUI: {comfyui_url}", file=sys.stderr)

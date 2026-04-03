@@ -288,6 +288,7 @@ python app_comfyui_gguf.py --preset "高画質化::Enhance quality." --preset "�
 - `--cfg N` (ComfyUI only) - CFG scale (default: 1.0)
 - `--gguf-model NAME` (ComfyUI GGUF only) - GGUF model name for UnetLoaderGGUF (auto-detected from ComfyUI if omitted)
 - `--clip-model NAME` (ComfyUI GGUF only) - GGUF CLIP model name for CLIPLoaderGGUF (auto-detected from ComfyUI if omitted)
+- `--enhance-model NAME` (ComfyUI only) - GGUF model name for prompt enhancement (overrides workflow default)
 
 **Note:** GGUF server does NOT support `--offload` (sequential CPU offload is incompatible with GGUF tensors). Only default (`enable_model_cpu_offload`) and `--no-offload` are available.
 

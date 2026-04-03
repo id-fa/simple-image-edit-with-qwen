@@ -163,16 +163,16 @@ python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
 
 ### プロンプト拡張（Enhance）
 
-ComfyUI版サーバーのみ。プロンプト欄下部の **Enhance →** ボタンで、短いプロンプトをローカルVLM（Qwen2.5-VL via llama_cpp）で詳細なプロンプトに拡張できます。
+ComfyUI版サーバーのみ。プロンプト欄下部の **Enhance →** ボタンで、短いプロンプトをローカルVLMで詳細なプロンプトに拡張できます。
 
 - Img1 に画像が設定されている場合、VLMが画像の内容を解析して文脈に合ったプロンプトを生成します
 - 画像がない場合（t2iモード等）はテキストのみで拡張します
 - 拡張結果はプロンプト欄に反映され、生成前に編集可能です
 - `server/comfyui_workflow/enhance_prompt_api.json` が存在しない場合、ボタンは非表示になります
-- ComfyUI に llama_cpp カスタムノード (`ComfyUI-llama-cpp_vlm`) と Qwen2.5-VL GGUF モデルが必要です
-- 必要なモデル（ComfyUI の `models/text_encoders/` に配置）:
-  - https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.Q6_K.gguf
-  - https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.mmproj-Q8_0.gguf (mmproj: 同じフォルダに配置)
+- ComfyUI に QwenVL カスタムノード (`ComfyUI-QwenVL`) と QwenVL GGUF モデルが必要です
+- 必要なモデル（ComfyUI の `models/LLM/mradermacher/Huihui-Qwen3.5-4B-abliterated-GGUF/` に配置）:
+  - `Huihui-Qwen3.5-4B-abliterated.Q8_0.gguf`
+  - `Huihui-Qwen3.5-4B-abliterated.mmproj-Q8_0.gguf`
 
 ---
 
@@ -541,16 +541,16 @@ Translation is provided because some models produce better results with English 
 
 ### Prompt Enhancement (Enhance)
 
-ComfyUI servers only. The **Enhance →** button expands a short prompt into a detailed one using a local VLM (Qwen2.5-VL via llama_cpp).
+ComfyUI servers only. The **Enhance →** button expands a short prompt into a detailed one using a local VLM.
 
 - If Img1 is set, the VLM analyzes the image to generate context-aware prompts
 - Without an image (e.g. t2i mode), enhancement is text-only
 - The result is placed in the prompt field and can be edited before generating
 - The button is hidden if `server/comfyui_workflow/enhance_prompt_api.json` does not exist
-- Requires llama_cpp custom node (`ComfyUI-llama-cpp_vlm`) and Qwen2.5-VL GGUF model in ComfyUI
-- Required models (place in ComfyUI `models/text_encoders/`):
-  - https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.Q6_K.gguf
-  - https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.mmproj-Q8_0.gguf (mmproj: place in same folder)
+- Requires QwenVL custom node (`ComfyUI-QwenVL`) and QwenVL GGUF model in ComfyUI
+- Required models (place in ComfyUI `models/LLM/mradermacher/Huihui-Qwen3.5-4B-abliterated-GGUF/`):
+  - `Huihui-Qwen3.5-4B-abliterated.Q8_0.gguf`
+  - `Huihui-Qwen3.5-4B-abliterated.mmproj-Q8_0.gguf`
 
 ---
 
@@ -793,7 +793,7 @@ pip install -r requirements.txt --extra-index-url https://download.pytorch.org/w
 cd custom_nodes
 git clone https://github.com/ltdrdata/ComfyUI-Manager.git
 git clone https://github.com/city96/ComfyUI-GGUF.git
-git clone https://github.com/id-fa/ComfyUI-llama-cpp_vlm.git
+git clone https://github.com/id-fa/ComfyUI-QwenVL.git
 git clone https://github.com/nunchaku-ai/ComfyUI-nunchaku.git
 git clone https://github.com/ussoewwin/ComfyUI-QwenImageLoraLoader.git
 
@@ -803,4 +803,15 @@ git clone https://github.com/ussoewwin/ComfyUI-QwenImageLoraLoader.git
 |--------|------|
 | **ComfyUI-Manager** | ノード管理・ComfyUI再起動API |
 | **ComfyUI-GGUF** | GGUF量子化モデルのロード (`UnetLoaderGGUF`, `CLIPLoaderGGUF`) |
-| **ComfyUI-llama-cpp_vlm** | プロンプト拡張用ローカルVLM (`llama_cpp_model_loader`, `llama_cpp_instruct_adv` 等) |
+| **ComfyUI-QwenVL** | プロンプト拡張用ローカルVLM (`AILab_QwenVL_GGUF_Advanced` 等) |
+
+### 必要なノード・モデルの確認
+
+その他、ComfyUIバックエンド版で必要なノードおよびモデルは下記ワークフローをComfyUIで開いて確認してください。
+
+| サーバー | ワークフロー |
+|----------|-------------|
+| `app_comfyui.py` | `server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_base.json` |
+| `app_comfyui_gguf.py` | `server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_gguf_base.json` |
+| `app_comfyui_nunchaku.py` | `server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_base.json` |
+| (共通) プロンプト拡張 | `server/comfyui_workflow/enhance_prompt.json` |
