@@ -306,6 +306,8 @@ button.cancel-btn:disabled { background: #4a4a5a; }
   max-width: 100%; cursor: pointer;
 }
 .gallery-prompt.expanded { white-space: normal; }
+.gallery-original-prompt { color: #6b7280; font-size: 0.75rem; margin-top: -4px; }
+.original-prompt-label { color: #7c6f64; font-weight: bold; }
 .gallery-images { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .gallery-img-box { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
 .gallery-thumb {
@@ -857,6 +859,9 @@ form.addEventListener('submit', async (e) => {
   const fd = new FormData();
   fd.append('password', document.getElementById('password').value);
   fd.append('prompt', document.getElementById('prompt').value);
+  if (typeof preEnhancePrompt !== 'undefined' && preEnhancePrompt !== null) {
+    fd.append('original_prompt', preEnhancePrompt);
+  }
   fd.append('pre_resize', document.getElementById('pre_resize').value);
   fd.append('seed', document.getElementById('seed').value);
   if (sessionRoom) fd.append('room', sessionRoom);
@@ -892,6 +897,13 @@ form.addEventListener('submit', async (e) => {
       }
     });
     fd.append('loras', JSON.stringify(sel));
+  }
+
+  // Clear enhance undo state (already captured in form data)
+  if (typeof preEnhancePrompt !== 'undefined') {
+    preEnhancePrompt = null;
+    const undoBtn = document.getElementById('enhanceUndoBtn');
+    if (undoBtn) undoBtn.style.display = 'none';
   }
 
   submitBtn.disabled = true;
@@ -1948,9 +1960,15 @@ function renderGalleryItem(item) {
     deleteBtn = ' <button class="gallery-delete-btn" onclick="deleteGalleryItem(\'' + item.job_id + '\')">&times;</button>';
   }
 
+  let promptHtml = '<div class="gallery-prompt">' + escapeHtml(item.prompt) + '</div>';
+  if (item.original_prompt) {
+    promptHtml += '<div class="gallery-prompt gallery-original-prompt">'
+      + '<span class="original-prompt-label">Original:</span> ' + escapeHtml(item.original_prompt) + '</div>';
+  }
+
   return '<div class="gallery-item" data-job-id="' + item.job_id + '">'
     + '<div class="gallery-meta">' + timeStr + seedInfo + t2iInfo + userInfo + deleteBtn + '</div>'
-    + '<div class="gallery-prompt">' + escapeHtml(item.prompt) + '</div>'
+    + promptHtml
     + '<div class="gallery-images">' + inputThumbs + resultThumb + '</div>'
     + '</div>';
 }

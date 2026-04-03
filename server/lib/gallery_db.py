@@ -60,7 +60,8 @@ class GalleryDB:
                     user_hash    TEXT,
                     status       TEXT NOT NULL DEFAULT 'done',
                     input_paths  TEXT,
-                    result_path  TEXT
+                    result_path  TEXT,
+                    original_prompt TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_jobs_created ON gallery_jobs(created);
 
@@ -78,6 +79,11 @@ class GalleryDB:
                 CREATE INDEX IF NOT EXISTS idx_drawings_created ON drawings(created);
             """)
             conn.commit()
+            # Migrate: add original_prompt column if missing (existing DBs)
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(gallery_jobs)").fetchall()}
+            if "original_prompt" not in cols:
+                conn.execute("ALTER TABLE gallery_jobs ADD COLUMN original_prompt TEXT")
+                conn.commit()
         finally:
             conn.close()
 
@@ -86,18 +92,18 @@ class GalleryDB:
     def add_job(self, job_id: str, created: float, prompt: str,
                 seed: int | None, t2i: bool, input_count: int,
                 user_hash: str, input_paths: list[str],
-                result_path: str):
+                result_path: str, original_prompt: str | None = None):
         """Insert a completed job into the gallery."""
         conn = self._conn()
         try:
             conn.execute(
                 """INSERT OR REPLACE INTO gallery_jobs
                    (job_id, created, prompt, seed, t2i, input_count,
-                    user_hash, status, input_paths, result_path)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'done', ?, ?)""",
+                    user_hash, status, input_paths, result_path, original_prompt)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'done', ?, ?, ?)""",
                 (job_id, created, prompt, seed, 1 if t2i else 0,
                  input_count, user_hash,
-                 json.dumps(input_paths), result_path)
+                 json.dumps(input_paths), result_path, original_prompt)
             )
             conn.commit()
         finally:
@@ -109,7 +115,7 @@ class GalleryDB:
         try:
             rows = conn.execute(
                 """SELECT job_id, created, prompt, seed, t2i, input_count,
-                          user_hash, status
+                          user_hash, status, original_prompt
                    FROM gallery_jobs
                    ORDER BY created DESC"""
             ).fetchall()
@@ -123,7 +129,7 @@ class GalleryDB:
                         "deleted": True,
                     })
                 else:
-                    items.append({
+                    item = {
                         "job_id": r["job_id"],
                         "created": r["created"],
                         "prompt": r["prompt"],
@@ -132,7 +138,10 @@ class GalleryDB:
                         "input_count": r["input_count"],
                         "user_hash": r["user_hash"],
                         "deleted": False,
-                    })
+                    }
+                    if r["original_prompt"]:
+                        item["original_prompt"] = r["original_prompt"]
+                    items.append(item)
             return items
         finally:
             conn.close()

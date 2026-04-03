@@ -79,6 +79,7 @@ def register_routes(
         room = request.form.get("room", "")
         t2i = request.form.get("t2i") == "1"
         prompt = request.form.get("prompt", "").strip() or prompt_default
+        original_prompt = request.form.get("original_prompt", "").strip() or None
         seed_str = request.form.get("seed", "").strip()
         seed = int(seed_str) if seed_str else None
         pre_resize_str = request.form.get("pre_resize", default_pre_resize)
@@ -147,6 +148,7 @@ def register_routes(
                 "user_hash": user_hash,
                 "loras": lora_selection,
                 "room": room,
+                "original_prompt": original_prompt,
             }
             common.processing_queue.append(job_id)
             queue_pos = len(common.processing_queue)
@@ -288,7 +290,7 @@ def register_routes(
                 if job.get("room", "") != room:
                     continue
                 if job["status"] == "done":
-                    items.append({
+                    entry = {
                         "job_id": jid,
                         "created": job["created"],
                         "prompt": job.get("prompt", ""),
@@ -297,7 +299,10 @@ def register_routes(
                         "input_count": len(job.get("input_paths", [])),
                         "user_hash": job.get("user_hash", ""),
                         "deleted": False,
-                    })
+                    }
+                    if job.get("original_prompt"):
+                        entry["original_prompt"] = job["original_prompt"]
+                    items.append(entry)
         items.sort(key=lambda x: x["created"], reverse=True)
         caller_hash = common.get_user_hash()
         return jsonify({"items": items, "caller_hash": caller_hash})

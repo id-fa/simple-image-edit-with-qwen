@@ -243,6 +243,7 @@ def persist_job_to_db(job_id: str, job: dict, result_path: str):
             user_hash=job["user_hash"],
             input_paths=job["input_paths"],
             result_path=result_path,
+            original_prompt=job.get("original_prompt"),
         )
     except Exception as ex:
         print(f"[warn] DB write failed: {ex}", file=sys.stderr)

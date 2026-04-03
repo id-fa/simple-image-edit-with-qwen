@@ -243,7 +243,7 @@ python app_comfyui_gguf.py --preset "高画質化::Enhance quality." --preset "�
 - Prompt presets (`--preset`): Configurable buttons above prompt textarea. Click to fill prompt with preset text. Confirmation dialog when replacing non-empty prompt
 - Prompt clear button (x) next to label for clearing prompt text
 - Prompt translation (googletrans): `Translate:` label with `-> EN` / `-> ZH` / `-> JA` buttons
-- Prompt enhancement (ComfyUI only): `Enhance` button runs a local VLM (QwenVL GGUF via AILab_QwenVL_GGUF_Advanced node) to expand short prompts into detailed ones. Uses `enhance_prompt_api.json` workflow. Sends current Img1 for context-aware enhancement. Button hidden if workflow file not found
+- Prompt enhancement (ComfyUI only): `Enhance` button runs a local VLM (QwenVL GGUF via QwenVL-F_GGUF_Advanced node) to expand short prompts into detailed ones. Uses `enhance_prompt_api.json` workflow. Sends current Img1 for context-aware enhancement. Button hidden if workflow file not found. `Undo` button appears after enhancement to revert to pre-enhance prompt. Pre-enhance prompt (`original_prompt`) is submitted with the job and displayed in gallery history alongside the enhanced prompt
 - File input clear buttons (x) for resetting image selections, drag-and-drop image upload
 - Continuous mode: Checkbox to auto-set generation result as Img1 for iterative editing. Result area also shows Img1/Img2 radio buttons for immediate reuse without waiting for gallery refresh
 - Preview during generation (ComfyUI only): Checkbox to show/hide real-time preview images from ComfyUI's WebSocket binary frames. Requires ComfyUI preview method enabled (Settings → Preview Method). Preview image displayed below progress bar, cleared on completion
@@ -471,7 +471,7 @@ All scripts share this preprocessing flow:
 **Gallery Persistence** (`server/lib/gallery_db.py`):
 - Shared SQLite module used by all 6 web servers
 - `GalleryDB` class: thread-safe (new connection per operation), WAL mode
-- Tables: `gallery_jobs` (job_id, created, prompt, seed, t2i, input_count, user_hash, status, input_paths JSON, result_path), `drawings` (drawing_id, user_hash, created, type, source, path, bg_path, overlay_path)
+- Tables: `gallery_jobs` (job_id, created, prompt, seed, t2i, input_count, user_hash, status, input_paths JSON, result_path, original_prompt), `drawings` (drawing_id, user_hash, created, type, source, path, bg_path, overlay_path)
 - Room isolation: `get_room_db(db_dir, room_name)` → cached `GalleryDB` instances, room name hashed (SHA-256) to `room_{hash}.db`
 - Dual lookup pattern: in-memory job queue (transient, for active jobs) vs SQLite gallery (persistent, for history). Gallery route reads DB first, then merges in-memory "done" jobs not yet persisted
 - `cleanup_old_room_dbs(db_dir)`: removes room DB files with no access for 7 days
