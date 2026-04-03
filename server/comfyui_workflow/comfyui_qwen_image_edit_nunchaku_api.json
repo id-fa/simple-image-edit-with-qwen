@@ -1,7 +1,7 @@
 {
   "3": {
     "inputs": {
-      "seed": 329932084019633,
+      "seed": 759838414229424,
       "steps": 8,
       "cfg": 1,
       "sampler_name": "euler_ancestral",
@@ -43,17 +43,6 @@
     "class_type": "VAEDecode",
     "_meta": {
       "title": "VAEデコード"
-    }
-  },
-  "38": {
-    "inputs": {
-      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
-      "type": "qwen_image",
-      "device": "default"
-    },
-    "class_type": "CLIPLoader",
-    "_meta": {
-      "title": "CLIPを読み込む"
     }
   },
   "39": {
@@ -148,7 +137,7 @@
     "inputs": {
       "prompt": "",
       "clip": [
-        "38",
+        "140",
         0
       ],
       "vae": [
@@ -171,9 +160,9 @@
   },
   "126": {
     "inputs": {
-      "prompt": "",
+      "prompt": "change her hair to green",
       "clip": [
-        "38",
+        "140",
         0
       ],
       "vae": [
@@ -222,7 +211,7 @@
       "toggle_all": true,
       "cpu_offload": "disable",
       "enabled_1": true,
-      "lora_name_1": "qwen-image\\PanelPainter_V2.safetensors",
+      "lora_name_1": "gnass_2512_qwen.safetensors",
       "lora_strength_1": 1,
       "model": [
         "133",
@@ -247,6 +236,16 @@
     "class_type": "ImageScaleToTotalPixels",
     "_meta": {
       "title": "画像を総ピクセルにスケール"
+    }
+  },
+  "140": {
+    "inputs": {
+      "clip_name": "Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf",
+      "type": "qwen_image"
+    },
+    "class_type": "CLIPLoaderGGUF",
+    "_meta": {
+      "title": "CLIPLoader (GGUF)"
     }
   }
 }

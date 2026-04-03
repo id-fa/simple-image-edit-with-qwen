@@ -152,7 +152,7 @@
   },
   "445": {
     "inputs": {
-      "lora_name": null,
+      "lora_name": "gnass_2512_qwen.safetensors",
       "strength_model": 1,
       "model": [
         "456",
@@ -235,7 +235,7 @@
   },
   "451": {
     "inputs": {
-      "lora_name": null,
+      "lora_name": "",
       "strength_model": 1,
       "model": [
         "445",
@@ -249,7 +249,7 @@
   },
   "452": {
     "inputs": {
-      "lora_name": null,
+      "lora_name": "",
       "strength_model": 1,
       "model": [
         "451",
@@ -263,7 +263,7 @@
   },
   "455": {
     "inputs": {
-      "clip_name": "Qwen2.5-VL-7B-Instruct-heretic.Q6_K.gguf",
+      "clip_name": "Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf",
       "type": "qwen_image"
     },
     "class_type": "CLIPLoaderGGUF",

@@ -102,7 +102,7 @@ WF_NODE = {
     "image_scale2":     "450",
     "prompt_text":      "435",
     "unet_loader":      "439",
-    "clip_loader":      "438",
+    "clip_loader":      "453",
     "vae_loader":       "437",
     "vae_encode":       "443",
     "vae_decode":       "444",
@@ -189,15 +189,22 @@ def comfyui_get_available_models() -> dict:
     for node_class, key, field in [
         ("UNETLoader", "unet_models", "unet_name"),
         ("CLIPLoader", "clip_models", "clip_name"),
+        ("ClipLoaderGGUF", "clip_models", "clip_name"),
         ("VAELoader", "vae_models", "vae_name"),
         ("LoraLoaderModelOnly", "lora_models", "lora_name"),
     ]:
         try:
             resp = http_requests.get(f"{comfyui_url}/object_info/{node_class}", timeout=10)
             data = resp.json()
-            info[key] = data[node_class]["input"]["required"][field][0]
+            models = data[node_class]["input"]["required"][field][0]
+            if key in info:
+                seen = set(info[key])
+                info[key].extend(m for m in models if m not in seen)
+            else:
+                info[key] = models
         except Exception:
-            info[key] = []
+            if key not in info:
+                info[key] = []
     return info
 
 
@@ -684,7 +691,8 @@ def main():
             "https://huggingface.co/Phr00t/Qwen-Image-Edit-Rapid-AIO/resolve/main/v23/Qwen-Rapid-AIO-NSFW-v23.safetensors",
         ],
         "clip_models": [
-            "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+            "https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf",
+            "https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.mmproj-Q8_0.gguf",
         ],
         "vae_models": [
             "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors",

@@ -92,12 +92,13 @@ python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
 | `--comfyui-path DIR` | ComfyUI両版 | ComfyUIインストールディレクトリ。LoRAパスを自動登録してComfyUIを再起動 |
 | `--steps N` | ComfyUI両版 | 推論ステップ数（デフォルト: 8） |
 | `--cfg N` | ComfyUI両版 | CFGスケール（デフォルト: 1.0） |
+| `--enhance-model NAME` | ComfyUI両版 | プロンプト拡張用GGUFモデル名（ワークフローのデフォルトを上書き） |
 
 > **注意:** GGUFサーバーは `--offload` 非対応（GGUF tensorsと互換性なし）。
 > **注意:** AIOサーバーはGGUFより大幅にVRAMが必要（bf16フル精度）。
 > **注意:** ComfyUI版は別途ComfyUIの起動が必要です。起動時に接続を確認し、失敗すると60秒後にリトライします。
 > **注意:** ComfyUI (Nunchaku) 版はNunchakuライブラリとカスタムノード `nunchaku-ai/ComfyUI-nunchaku`、`ussoewwin/ComfyUI-QwenImageLoraLoader` のインストールが必要です。
-> **注意:** ComfyUI (GGUF) 版はggufライブラリとカスタムノード `city96/ComfyUI-GGUF` のインストールが必要です。
+> **注意:** ComfyUI版はカスタムノード `city96/ComfyUI-GGUF` のインストールが必要です（テキストエンコーダおよびプロンプト拡張でGGUFモデルを使用）。
 
 ---
 
@@ -470,12 +471,13 @@ python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
 | `--comfyui-path DIR` | ComfyUI both | ComfyUI installation directory. Auto-registers LoRA path and reboots ComfyUI |
 | `--steps N` | ComfyUI both | Inference steps (default: 8) |
 | `--cfg N` | ComfyUI both | CFG scale (default: 1.0) |
+| `--enhance-model NAME` | ComfyUI both | GGUF model name for prompt enhancement (overrides workflow default) |
 
 > **Note:** The GGUF server does not support `--offload` (incompatible with GGUF tensors).
 > **Note:** The AIO server requires significantly more VRAM than GGUF (bf16 full precision).
 > **Note:** ComfyUI servers require a separate running ComfyUI instance. Connection is verified at startup with a 60-second retry.
 > **Note:** ComfyUI (Nunchaku) requires the Nunchaku library and custom nodes `nunchaku-ai/ComfyUI-nunchaku` and `ussoewwin/ComfyUI-QwenImageLoraLoader`.
-> **Note:** ComfyUI (GGUF) requires the gguf library and custom node `city96/ComfyUI-GGUF`.
+> **Note:** ComfyUI servers require custom node `city96/ComfyUI-GGUF` (GGUF models used for text encoder and prompt enhancement).
 
 ---
 

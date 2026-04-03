@@ -103,7 +103,7 @@ WF_NODE = {
     "load_image2":      "127",       # LoadImage - reference / image2
     "image_scale1":     "93",        # ImageScaleToTotalPixels - img1
     "image_scale2":     "138",       # ImageScaleToTotalPixels - img2
-    "clip_loader":      "38",        # CLIPLoader
+    "clip_loader":      "140",       # CLIPLoaderGGUF
     "vae_loader":       "39",        # VAELoader
     "vae_encode":       "88",        # VAEEncode
     "vae_decode":       "8",         # VAEDecode
@@ -198,14 +198,21 @@ def comfyui_get_available_models() -> dict:
     info: dict[str, list] = {}
     for node_class, key, field in [
         ("CLIPLoader", "clip_models", "clip_name"),
+        ("CLIPLoaderGGUF", "clip_models", "clip_name"),
         ("VAELoader", "vae_models", "vae_name"),
     ]:
         try:
             resp = http_requests.get(f"{comfyui_url}/object_info/{node_class}", timeout=10)
             data = resp.json()
-            info[key] = data[node_class]["input"]["required"][field][0]
+            models = data[node_class]["input"]["required"][field][0]
+            if key in info:
+                seen = set(info[key])
+                info[key].extend(m for m in models if m not in seen)
+            else:
+                info[key] = models
         except Exception:
-            info[key] = []
+            if key not in info:
+                info[key] = []
     # NunchakuQwenImageDiTLoader model names
     try:
         resp = http_requests.get(f"{comfyui_url}/object_info/NunchakuQwenImageDiTLoader", timeout=10)
@@ -729,7 +736,8 @@ def main():
             "https://huggingface.co/nunchaku-ai/nunchaku-qwen-image-edit-2509/resolve/main/lightning-251115/svdq-fp4_r128-qwen-image-edit-2509-lightning-8steps-251115.safetensors",
         ],
         "clip_models": [
-            "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+            "https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf",
+            "https://huggingface.co/mradermacher/Qwen2.5-VL-7B-Instruct-heretic-GGUF/resolve/main/Qwen2.5-VL-7B-Instruct-heretic.mmproj-Q8_0.gguf",
         ],
         "vae_models": [
             "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors",
