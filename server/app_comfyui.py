@@ -189,7 +189,7 @@ def comfyui_get_available_models() -> dict:
     for node_class, key, field in [
         ("UNETLoader", "unet_models", "unet_name"),
         ("CLIPLoader", "clip_models", "clip_name"),
-        ("ClipLoaderGGUF", "clip_models", "clip_name"),
+        ("CLIPLoaderGGUF", "clip_models", "clip_name"),
         ("VAELoader", "vae_models", "vae_name"),
         ("LoraLoaderModelOnly", "lora_models", "lora_name"),
     ]:
