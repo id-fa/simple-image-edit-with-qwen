@@ -221,6 +221,13 @@ def comfyui_get_available_models() -> dict:
         info["nunchaku_models"] = data["NunchakuQwenImageDiTLoader"]["input"]["required"]["model_name"][0]
     except Exception:
         info["nunchaku_models"] = []
+    # LoRA model names (for ComfyUI-known LoRAs)
+    try:
+        resp = http_requests.get(f"{comfyui_url}/object_info/LoraLoaderModelOnly", timeout=10)
+        data = resp.json()
+        info["lora_models"] = data["LoraLoaderModelOnly"]["input"]["required"]["lora_name"][0]
+    except Exception:
+        info["lora_models"] = []
     return info
 
 
@@ -804,6 +811,22 @@ def main():
 
     # Scan LoRA folder
     common.lora_registry.extend(scan_lora_folder())
+
+    # If --comfyui-path not specified, also register all ComfyUI-known LoRAs
+    if not args.comfyui_path:
+        known = {e["comfyui_name"] for e in common.lora_registry}
+        for cn in available.get("lora_models", []):
+            if cn not in known:
+                name = cn.replace("\\", "/").split("/")[-1].rsplit(".", 1)[0]
+                common.lora_registry.append({
+                    "name": name,
+                    "comfyui_name": cn,
+                    "local_path": None,
+                    "default_scale": 1.0,
+                })
+        if common.lora_registry:
+            print(f"[info] {len(common.lora_registry)} LoRA(s) from ComfyUI API", file=sys.stderr)
+
     if common.lora_registry:
         print(f"[info] {len(common.lora_registry)} LoRA(s) available", file=sys.stderr)
 
@@ -813,7 +836,7 @@ def main():
     common.model_info["text_encoder_class"] = clip_name
     common.model_info["vae_class"] = vae_name
     common.model_info["steps"] = f"{configured_steps} (CFG: {configured_cfg})"
-    if common.lora_registry:
+    if common.lora_registry and args.comfyui_path:
         common.model_info["loras"] = ", ".join(e["name"] for e in common.lora_registry)
 
     common.start_server_threads(worker_loop)

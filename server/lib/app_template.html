@@ -48,7 +48,10 @@ select { appearance: auto; }
 .checkbox-row label { margin: 0; }
 .btn-row { display: flex; gap: 10px; align-items: center; margin-top: 20px; }
 .lora-section { margin-top: 12px; }
-.lora-section-label { font-size: 0.85rem; color: #a78bfa; margin-bottom: 6px; }
+.lora-section-label { font-size: 0.85rem; color: #a78bfa; margin-bottom: 6px; cursor: pointer; user-select: none; }
+.lora-section-label::before { content: '▶ '; font-size: 0.7rem; }
+.lora-section-label.expanded::before { content: '▼ '; font-size: 0.7rem; }
+.lora-section-label .lora-count { font-size: 0.7rem; color: #6b7280; margin-left: 4px; }
 .lora-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .lora-item input[type="checkbox"] { margin: 0; accent-color: #7c3aed; }
 .lora-item .lora-name { font-size: 0.8rem; color: #d1d5db; min-width: 80px; }
@@ -431,8 +434,8 @@ button.cancel-btn:disabled { background: #4a4a5a; }
     <input type="number" id="seed" name="seed" placeholder="optional">
 
     <div class="lora-section" id="loraSection" style="display:none;">
-      <div class="lora-section-label">LoRA</div>
-      <div id="loraList"></div>
+      <div class="lora-section-label" id="loraToggle">LoRA</div>
+      <div id="loraList" style="display:none;"></div>
     </div>
 
     <div class="btn-row">
@@ -619,8 +622,10 @@ fetch('/api/loras').then(r => r.json()).then(loras => {
   if (!loras || loras.length === 0) return;
   const section = document.getElementById('loraSection');
   const list = document.getElementById('loraList');
-  if (!section || !list) return;
+  const toggle = document.getElementById('loraToggle');
+  if (!section || !list || !toggle) return;
   section.style.display = 'block';
+  toggle.innerHTML = 'LoRA<span class="lora-count">(' + loras.length + ')</span>';
   let html = '';
   for (const lora of loras) {
     const id = 'lora_' + lora.name.replace(/[^a-zA-Z0-9_]/g, '_');
@@ -633,6 +638,11 @@ fetch('/api/loras').then(r => r.json()).then(loras => {
       + '</div>';
   }
   list.innerHTML = html;
+  toggle.addEventListener('click', () => {
+    const open = list.style.display !== 'none';
+    list.style.display = open ? 'none' : 'block';
+    toggle.classList.toggle('expanded', !open);
+  });
 }).catch(() => {});
 
 // t2i toggle
