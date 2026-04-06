@@ -382,7 +382,8 @@ def register_routes(
 
     @app.route("/api/loras")
     def get_loras():
-        return jsonify([{"name": e["name"], "default_scale": e.get("default_scale", 1.0)}
+        return jsonify([{"name": e["name"], "default_scale": e.get("default_scale", 1.0),
+                         "folder": e.get("folder", "")}
                          for e in common.lora_registry])
 
     @app.route("/api/queue_info")

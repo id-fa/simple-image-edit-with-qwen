@@ -1,36 +1,32 @@
-# Common dependencies (both app_gguf.py and app_nunchaku.py)
+# PyTorch  (install CUDA version from .whl) pytorch.org
+#torch>=2.4.0
+#torchvideo
+#torchaudio
+
+hf_xet
+transformers>=4.45.0
+accelerate>=0.33.0
+huggingface_hub>=0.24.0
+safetensors>=0.4.5
+pillow>=10.4.0
+bitsandbytes>=0.43.0
+gguf>=0.10.0
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+
 flask>=3.0
-pillow
-huggingface_hub
 psutil
-transformers
-accelerate
-safetensors
-torch
 googletrans
+diskcache
+scipy
+numpy
+tqdm
 
-# app_gguf.py: GGUF quantized (diffusers>=0.36.0 + gguf)
-# diffusers>=0.36.0
-# gguf
+diffusers>=0.36.0,<0.37.0
 
-# app_nunchaku.py: Nunchaku Lightning (diffusers==0.36.x + nunchaku)
-# diffusers>=0.36.0,<0.37.0
-# nunchaku (install from .whl)
-
-# NOTE: Choose ONE of the above depending on which server you use.
-# GGUF and Nunchaku can share the same venv (both need diffusers 0.36.x).
-# Install example for GGUF:
-#   pip install "diffusers>=0.36.0" gguf
-# Install example for Nunchaku:
-#   pip install "diffusers>=0.36.0,<0.37.0"
+# nunchaku (install from .whl) nunchaku-ai/nunchaku
 #   pip install <nunchaku .whl URL>
 
-# Prompt enhancement (optional, for ComfyUI servers with enhance_prompt_api.json)
-# Requires ComfyUI with llama_cpp nodes + Qwen2.5-VL model installed.
-# diskcache
-# scipy
-# numpy
-# pillow  (already listed above)
-# gguf    (already listed above for GGUF server)
-# tqdm
-# llama-cpp-python
+# llama-cpp-python (install from .whl) JamePeng/llama-cpp-python
+#   pip install <llama-cpp-python .whl URL>
+

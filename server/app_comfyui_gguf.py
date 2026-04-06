@@ -755,12 +755,15 @@ def main():
         known = {e["comfyui_name"] for e in common.lora_registry}
         for cn in available.get("lora_models", []):
             if cn not in known:
-                name = cn.replace("\\", "/").split("/")[-1].rsplit(".", 1)[0]
+                parts = cn.replace("\\", "/").rsplit("/", 1)
+                name = parts[-1].rsplit(".", 1)[0]
+                folder = parts[0] if len(parts) > 1 else ""
                 common.lora_registry.append({
                     "name": name,
                     "comfyui_name": cn,
                     "local_path": None,
                     "default_scale": 1.0,
+                    "folder": folder,
                 })
         if common.lora_registry:
             print(f"[info] {len(common.lora_registry)} LoRA(s) from ComfyUI API", file=sys.stderr)
