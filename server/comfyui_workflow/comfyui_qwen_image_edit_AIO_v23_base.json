@@ -1,8 +1,8 @@
 {
   "id": "91f6bbe2-ed41-4fd6-bac7-71d5b5864ecb",
   "revision": 1,
-  "last_node_id": 453,
-  "last_link_id": 742,
+  "last_node_id": 454,
+  "last_link_id": 744,
   "nodes": [
     {
       "id": 60,
@@ -300,7 +300,7 @@
         {
           "name": "clip",
           "type": "CLIP",
-          "link": 742
+          "link": 744
         },
         {
           "name": "vae",
@@ -412,7 +412,7 @@
         {
           "name": "clip",
           "type": "CLIP",
-          "link": 741
+          "link": 743
         },
         {
           "name": "vae",
@@ -985,15 +985,15 @@
       "bgcolor": "#000"
     },
     {
-      "id": 453,
-      "type": "ClipLoaderGGUF",
+      "id": 454,
+      "type": "CLIPLoaderGGUF",
       "pos": [
-        -352.9477902737528,
-        -103.17055111327117
+        -388.19818951757026,
+        -96.49357223986503
       ],
       "size": [
-        270,
-        106
+        330.8487917330743,
+        95.18390487549942
       ],
       "flags": {},
       "order": 6,
@@ -1004,20 +1004,19 @@
           "name": "CLIP",
           "type": "CLIP",
           "links": [
-            741,
-            742
+            743,
+            744
           ]
         }
       ],
       "properties": {
-        "cnr_id": "gguf",
-        "ver": "e802c7831507af49eefa40324eb78378eec4f3cf",
-        "Node name for S&R": "ClipLoaderGGUF"
+        "cnr_id": "ComfyUI-GGUF",
+        "ver": "6ea2651e7df66d7585f6ffee804b20e92fb38b8a",
+        "Node name for S&R": "CLIPLoaderGGUF"
       },
       "widgets_values": [
         "Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf",
-        "qwen_image",
-        "default"
+        "qwen_image"
       ]
     }
   ],
@@ -1207,16 +1206,16 @@
       "MODEL"
     ],
     [
-      741,
-      453,
+      743,
+      454,
       0,
       442,
       0,
       "CLIP"
     ],
     [
-      742,
-      453,
+      744,
+      454,
       0,
       440,
       0,
@@ -1267,10 +1266,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 1.3124336198871835,
+      "scale": 0.9860508038220763,
       "offset": [
-        1008.7270967776617,
-        1114.2692370501138
+        549.4474876102172,
+        468.6853483405026
       ]
     },
     "frontendVersion": "1.41.21",

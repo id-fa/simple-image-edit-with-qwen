@@ -102,7 +102,7 @@ WF_NODE = {
     "image_scale2":     "450",
     "prompt_text":      "435",
     "unet_loader":      "439",
-    "clip_loader":      "453",
+    "clip_loader":      "454",
     "vae_loader":       "437",
     "vae_encode":       "443",
     "vae_decode":       "444",
