@@ -137,7 +137,7 @@
     "inputs": {
       "prompt": "",
       "clip": [
-        "140",
+        "141",
         0
       ],
       "vae": [
@@ -162,7 +162,7 @@
     "inputs": {
       "prompt": "change her hair to green",
       "clip": [
-        "140",
+        "141",
         0
       ],
       "vae": [
@@ -238,14 +238,15 @@
       "title": "画像を総ピクセルにスケール"
     }
   },
-  "140": {
+  "141": {
     "inputs": {
       "clip_name": "Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf",
-      "type": "qwen_image"
+      "type": "qwen_image",
+      "device": "cpu"
     },
-    "class_type": "CLIPLoaderGGUF",
+    "class_type": "CLIPLoaderGGUFMultiGPU",
     "_meta": {
-      "title": "CLIPLoader (GGUF)"
+      "title": "CLIPLoaderGGUFMultiGPU"
     }
   }
 }

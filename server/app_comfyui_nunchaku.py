@@ -103,7 +103,7 @@ WF_NODE = {
     "load_image2":      "127",       # LoadImage - reference / image2
     "image_scale1":     "93",        # ImageScaleToTotalPixels - img1
     "image_scale2":     "138",       # ImageScaleToTotalPixels - img2
-    "clip_loader":      "140",       # CLIPLoaderGGUF
+    "clip_loader":      "141",       # CLIPLoaderGGUFMultiGPU
     "vae_loader":       "39",        # VAELoader
     "vae_encode":       "88",        # VAEEncode
     "vae_decode":       "8",         # VAEDecode
@@ -199,6 +199,7 @@ def comfyui_get_available_models() -> dict:
     for node_class, key, field in [
         ("CLIPLoader", "clip_models", "clip_name"),
         ("CLIPLoaderGGUF", "clip_models", "clip_name"),
+        ("CLIPLoaderGGUFMultiGPU", "clip_models", "clip_name"),
         ("VAELoader", "vae_models", "vae_name"),
     ]:
         try:
