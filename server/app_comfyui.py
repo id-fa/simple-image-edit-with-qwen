@@ -699,6 +699,15 @@ def main():
         ],
     }
 
+    # CLIP: if exact model not found, try alternative quantization of same base model
+    if clip_name and clip_name not in available.get("clip_models", []):
+        base = clip_name.rsplit(".", 1)[0].rsplit(".", 1)[0]  # e.g. "Qwen2.5-VL-7B-Instruct-heretic"
+        alt = [m for m in available.get("clip_models", []) if m.startswith(base) and m.endswith(".gguf") and "mmproj" not in m]
+        if alt:
+            clip_name = alt[0]
+            WORKFLOW_TEMPLATE[WF_NODE["clip_loader"]]["inputs"]["clip_name"] = clip_name
+            print(f"[info] CLIP: using available alternative: {clip_name}", file=sys.stderr)
+
     missing = []
     if unet_name and unet_name not in available.get("unet_models", []):
         missing.append(("UNET", unet_name, "unet_models"))
