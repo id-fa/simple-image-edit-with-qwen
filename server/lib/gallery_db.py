@@ -61,7 +61,8 @@ class GalleryDB:
                     status       TEXT NOT NULL DEFAULT 'done',
                     input_paths  TEXT,
                     result_path  TEXT,
-                    original_prompt TEXT
+                    original_prompt TEXT,
+                    input_names  TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_jobs_created ON gallery_jobs(created);
 
@@ -84,6 +85,9 @@ class GalleryDB:
             if "original_prompt" not in cols:
                 conn.execute("ALTER TABLE gallery_jobs ADD COLUMN original_prompt TEXT")
                 conn.commit()
+            if "input_names" not in cols:
+                conn.execute("ALTER TABLE gallery_jobs ADD COLUMN input_names TEXT")
+                conn.commit()
         finally:
             conn.close()
 
@@ -92,18 +96,21 @@ class GalleryDB:
     def add_job(self, job_id: str, created: float, prompt: str,
                 seed: int | None, t2i: bool, input_count: int,
                 user_hash: str, input_paths: list[str],
-                result_path: str, original_prompt: str | None = None):
+                result_path: str, original_prompt: str | None = None,
+                input_names: list[str] | None = None):
         """Insert a completed job into the gallery."""
         conn = self._conn()
         try:
             conn.execute(
                 """INSERT OR REPLACE INTO gallery_jobs
                    (job_id, created, prompt, seed, t2i, input_count,
-                    user_hash, status, input_paths, result_path, original_prompt)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'done', ?, ?, ?)""",
+                    user_hash, status, input_paths, result_path, original_prompt,
+                    input_names)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'done', ?, ?, ?, ?)""",
                 (job_id, created, prompt, seed, 1 if t2i else 0,
                  input_count, user_hash,
-                 json.dumps(input_paths), result_path, original_prompt)
+                 json.dumps(input_paths), result_path, original_prompt,
+                 json.dumps(input_names) if input_names else None)
             )
             conn.commit()
         finally:
@@ -115,7 +122,7 @@ class GalleryDB:
         try:
             rows = conn.execute(
                 """SELECT job_id, created, prompt, seed, t2i, input_count,
-                          user_hash, status, original_prompt
+                          user_hash, status, original_prompt, input_names
                    FROM gallery_jobs
                    ORDER BY created DESC"""
             ).fetchall()
@@ -141,6 +148,11 @@ class GalleryDB:
                     }
                     if r["original_prompt"]:
                         item["original_prompt"] = r["original_prompt"]
+                    if r["input_names"]:
+                        try:
+                            item["input_names"] = json.loads(r["input_names"])
+                        except Exception:
+                            pass
                     items.append(item)
             return items
         finally:
@@ -152,13 +164,14 @@ class GalleryDB:
         try:
             row = conn.execute(
                 """SELECT job_id, created, prompt, seed, t2i, input_count,
-                          user_hash, status, input_paths, result_path
+                          user_hash, status, input_paths, result_path,
+                          input_names
                    FROM gallery_jobs WHERE job_id = ?""",
                 (job_id,)
             ).fetchone()
             if not row:
                 return None
-            return {
+            job = {
                 "job_id": row["job_id"],
                 "created": row["created"],
                 "prompt": row["prompt"],
@@ -170,6 +183,12 @@ class GalleryDB:
                 "input_paths": json.loads(row["input_paths"]) if row["input_paths"] else [],
                 "result_path": row["result_path"],
             }
+            if row["input_names"]:
+                try:
+                    job["input_names"] = json.loads(row["input_names"])
+                except Exception:
+                    pass
+            return job
         finally:
             conn.close()
 

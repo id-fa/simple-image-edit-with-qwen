@@ -258,6 +258,7 @@ python app_comfyui_gguf.py --preset "高画質化::Enhance quality." --preset "�
 - Password hashing: `POST /api/login` and `POST /api/submit` accept plaintext password (safe in POST body). Server returns `token` (SHA-256 hash of password). GET routes (`/api/gallery`, `/api/result`, `/api/input`, `/api/drawings`, `/api/drawing/*`) and DELETE routes verify against the hashed token. Hashing logic is server-side only (client receives token via API response)
 - User identification: Each gallery entry shows a hashed user ID (SHA-256 of IP + User-Agent, 8 chars) to distinguish generators. Uses `X-Forwarded-For` header when available (reverse proxy support)
 - Gallery entry deletion: Users can delete their own gallery entries (user_hash match required). Deleted entries remain visible as placeholders showing timestamp, user ID, and bilingual deletion message. Files are not removed (cleaned up by auto-cleanup). `DELETE /api/gallery/<job_id>` sets job status to `"hidden"`
+- Original filename display: Uploaded filenames are saved per job (`input_names` JSON array). Displayed only to the uploader (user_hash match). Download filenames are prefixed with the original filename for the owner (e.g. `{original}_result_{job_id}.png`)
 - Drawing editor: Click any image (gallery thumbnails, upload previews, generated results) to open a full-screen drawing editor with:
   - Dual-canvas architecture: background layer (original image) + transparent overlay layer (drawings)
   - Tools: Pen (freehand drawing), Brush (pressure-sensitive pen — line width scales with pen pressure), Airbrush (pressure-sensitive spray — radius and density scale with pressure), Eraser (removes overlay pixels only via `destination-out`), Cover (white paint over original image)
@@ -473,7 +474,7 @@ All scripts share this preprocessing flow:
 **Gallery Persistence** (`server/lib/gallery_db.py`):
 - Shared SQLite module used by all 6 web servers
 - `GalleryDB` class: thread-safe (new connection per operation), WAL mode
-- Tables: `gallery_jobs` (job_id, created, prompt, seed, t2i, input_count, user_hash, status, input_paths JSON, result_path, original_prompt), `drawings` (drawing_id, user_hash, created, type, source, path, bg_path, overlay_path)
+- Tables: `gallery_jobs` (job_id, created, prompt, seed, t2i, input_count, user_hash, status, input_paths JSON, result_path, original_prompt, input_names JSON), `drawings` (drawing_id, user_hash, created, type, source, path, bg_path, overlay_path)
 - Room isolation: `get_room_db(db_dir, room_name)` → cached `GalleryDB` instances, room name hashed (SHA-256) to `room_{hash}.db`
 - Dual lookup pattern: in-memory job queue (transient, for active jobs) vs SQLite gallery (persistent, for history). Gallery route reads DB first, then merges in-memory "done" jobs not yet persisted
 - `cleanup_old_room_dbs(db_dir)`: removes room DB files with no access for 7 days

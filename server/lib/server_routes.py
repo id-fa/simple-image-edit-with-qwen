@@ -87,6 +87,7 @@ def register_routes(
 
         job_id = uuid.uuid4().hex[:12]
         input_paths = []
+        input_names = []
 
         if not t2i:
             f1 = request.files.get("image1")
@@ -99,6 +100,7 @@ def register_routes(
                 save1 = common.TMP_DIR / f"{job_id}_in0{ext1}"
                 f1.save(save1)
                 input_paths.append(str(save1))
+                input_names.append(Path(f1.filename).stem)
             elif g1:
                 resolved = common.resolve_gallery_ref(g1, job_id, 0, room)
                 if not resolved:
@@ -112,6 +114,7 @@ def register_routes(
                 save2 = common.TMP_DIR / f"{job_id}_in1{ext2}"
                 f2.save(save2)
                 input_paths.append(str(save2))
+                input_names.append(Path(f2.filename).stem)
             elif g2:
                 resolved = common.resolve_gallery_ref(g2, job_id, 1, room)
                 if resolved:
@@ -149,6 +152,7 @@ def register_routes(
                 "loras": lora_selection,
                 "room": room,
                 "original_prompt": original_prompt,
+                "input_names": input_names or None,
             }
             common.processing_queue.append(job_id)
             queue_pos = len(common.processing_queue)
@@ -237,12 +241,16 @@ def register_routes(
             if pw != common.server_password_hash:
                 return jsonify({"error": "Unauthorized"}), 403
         rp = None
+        input_names = None
+        job_user_hash = None
         with common.job_lock:
             job = common.jobs.get(job_id)
             if job:
                 if job["status"] != "done":
                     return jsonify({"error": "まだ処理中です / Still processing"}), 400
                 rp = job["result_path"]
+                input_names = job.get("input_names")
+                job_user_hash = job.get("user_hash")
         if not rp and common.gallery_enabled:
             room = request.args.get("room", "")
             from lib.gallery_db import get_room_db
@@ -250,11 +258,17 @@ def register_routes(
             db_job = rdb.get_job(job_id)
             if db_job:
                 rp = db_job.get("result_path")
+                if not input_names and db_job.get("input_names"):
+                    input_names = db_job["input_names"]
+                    job_user_hash = db_job.get("user_hash")
 
         if not rp or not os.path.exists(rp):
             return jsonify({"error": "結果ファイルが見つかりません / Result file not found"}), 404
+        dl_name = f"result_{job_id}.png"
+        if input_names and job_user_hash == common.get_user_hash():
+            dl_name = f"{input_names[0]}_result_{job_id}.png"
         return send_file(rp, mimetype="image/png", as_attachment=True,
-                         download_name=f"result_{job_id}.png")
+                         download_name=dl_name)
 
     @app.route("/api/translate", methods=["POST"])
     def translate_text():
@@ -302,9 +316,15 @@ def register_routes(
                     }
                     if job.get("original_prompt"):
                         entry["original_prompt"] = job["original_prompt"]
+                    if job.get("input_names"):
+                        entry["input_names"] = job["input_names"]
                     items.append(entry)
         items.sort(key=lambda x: x["created"], reverse=True)
         caller_hash = common.get_user_hash()
+        # Only expose input_names to the owner
+        for it in items:
+            if it.get("input_names") and it.get("user_hash") != caller_hash:
+                del it["input_names"]
         return jsonify({"items": items, "caller_hash": caller_hash})
 
     @app.route("/api/gallery/<job_id>", methods=["DELETE"])
