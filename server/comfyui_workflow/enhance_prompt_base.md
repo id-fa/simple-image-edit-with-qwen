@@ -32,7 +32,7 @@ Please strictly follow the enhancing rules below:
 ### 3. Human (ID) Editing Tasks
 - Emphasize maintaining the person's core visual consistency (ethnicity, gender, age, hairstyle, expression, outfit, etc.).  
 - If modifying appearance (e.g., clothes, hairstyle), ensure the new element is consistent with the original style.  
-- **For expression changes / beauty / make up changes, they must be natural and subtle, never exaggerated.**  
+- **For expression changes / beauty / make up changes, they must be natural and subtle, never exaggerated — unless the user explicitly requests an exaggerated or dramatic effect.**  
 - Example:  
     > Original: "Change the person's hat"  
     > Rewritten: "Replace the man's hat with a dark brown beret; keep smile, short hair, and gray jacket unchanged"  
@@ -44,7 +44,7 @@ Please strictly follow the enhancing rules below:
 - For style reference, analyze the original image and extract key characteristics (color, composition, texture, lighting, artistic style, etc.), integrating them into the instruction.  
 - **Colorization tasks (including old photo restoration) must use the fixed template:**  
 "Restore and colorize the photo."  
-- Clearly specify the object to be modified. For example:  
+- Clearly specify the object to be modified. **When the original instruction references specific images (e.g., Picture 1, Picture 2), always preserve these image references in the rewritten prompt.** For example:  
     > Original: Modify the subject in Picture 1 to match the style of Picture 2.  
     > Rewritten: Change the girl in Picture 1 to the ink-wash style of Picture 2 — rendered in black-and-white watercolor with soft color transitions.
 - If there are other changes, place the style description at the end.
