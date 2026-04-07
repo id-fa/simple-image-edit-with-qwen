@@ -438,7 +438,7 @@ All scripts share this preprocessing flow:
 - LoRA: scans `server/LoRA/` folder, matches against ComfyUI's known LoRAs via `/object_info/LoraLoaderModelOnly`. Workflow has 3 `LoraLoaderModelOnly` slots chained (UNETLoader → slot1 → slot2 → slot3 → ModelSamplingAuraFlow); unused slots are removed from workflow and chain is rewired
 - `--comfyui-path`: auto-registers LoRA path in `extra_model_paths.yaml` and reboots ComfyUI via Manager API (`GET /manager/reboot`)
 - Steps/CFG: set directly on KSampler node
-- HTML template: shared `server/lib/app_template.html` (unified template for all 6 servers). Jinja2 variables: `server_title`, `pre_resize_options`, `has_preview` (ComfyUI-only: preview checkbox, preview area), `has_enhance` (ComfyUI-only: Enhance button)
+- HTML template: shared `server/lib/app_template.html` (unified template for all 6 servers). Jinja2 variables: `server_title`, `pre_resize_options`, `has_preview` (ComfyUI-only: preview checkbox, preview area), `has_enhance` (ComfyUI-only: Enhance button). JS scope structure: `initApp()` wraps per-session UI logic (form handlers, polling); functions called from inline `onclick` handlers in dynamically generated HTML (e.g. `handleResultSlot`, `openDrawingEditor`) must be defined at global scope (outside `initApp()`), not inside it
 - CLIP: `CLIPLoaderGGUF` (GGUF CLIP, e.g. `Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf`)
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (UNET/CLIP GGUF/VAE), LoRA path registration
 
