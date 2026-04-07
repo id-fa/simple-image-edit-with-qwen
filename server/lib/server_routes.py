@@ -209,8 +209,12 @@ def register_routes(
             f = request.files.get("image")
             if f and f.filename:
                 image_bytes = f.read()
+            image2_bytes = None
+            f2 = request.files.get("image2")
+            if f2 and f2.filename:
+                image2_bytes = f2.read()
             try:
-                enhanced = enhance_fn(prompt_text, image_bytes)
+                enhanced = enhance_fn(prompt_text, image_bytes, image2_bytes)
                 return jsonify({"enhanced": enhanced})
             except Exception as ex:
                 return jsonify({"error": f"プロンプト拡張に失敗しました / Enhance failed: {ex}"}), 500

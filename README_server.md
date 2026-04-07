@@ -760,6 +760,8 @@ Error messages are displayed in both Japanese and English.
 ## インストール / Installation
 
 > **参考:** `notebooks/` ディレクトリに Google Colab / Paperspace 用の Jupyter Notebook があります。クラウド環境でのセットアップ手順の参考にしてください。
+>
+> **Note:** Jupyter Notebooks for Google Colab / Paperspace are available in the `notebooks/` directory. Refer to them for cloud environment setup instructions.
 
 ### ライブラリ導入
 
@@ -783,11 +785,69 @@ pip install -U https://github.com/nunchaku-ai/nunchaku/releases/download/v1.2.1/
 
 ### ComfyUI インストール
 
+ComfyUI版サーバーを使用するには、別途ComfyUIのセットアップが必要です。
+
+#### Windows 環境
+
+以下のいずれかのツールを使って簡単にComfyUIを導入できます:
+
+| ツール | 特徴 |
+|--------|------|
+| [**StabilityMatrix**](https://github.com/LykosAI/StabilityMatrix) | 複数のUI（ComfyUI/Forge/A1111等）を統合管理。モデル管理・ワンクリックインストール対応 |
+| [**ComfyUI-Easy-Install**](https://github.com/Tavris1/ComfyUI-Easy-Install) | ComfyUI専用の軽量インストーラー。最小限の手順で導入可能 |
+| [**SimpleComfyUI**](https://github.com/Zuntan03/SimpleComfyUi) | 日本語対応のシンプルなセットアップツール。初心者向け |
+
+いずれも Python や CUDA のセットアップを自動化してくれるため、手動でのインストールに比べて手軽です。
+
+<details>
+<summary>手動インストール（上記ツールを使わない場合）</summary>
+
 ```powershell
 git clone https://github.com/comfyanonymous/ComfyUI.git
 cd ComfyUI
 pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu130
 ```
+
+</details>
+
+#### Linux / クラウド環境
+
+`notebooks/` ディレクトリに Google Colab / Paperspace 向けの Jupyter Notebook が用意されています。ComfyUI版サーバーのセットアップからトンネル公開まで一括で行えます。
+
+| Notebook | 環境 | サーバー |
+|----------|------|----------|
+| `notebooks/server_comfyui/colab_app_comfyui_gguf.ipynb` | Google Colab | ComfyUI (GGUF) |
+| `notebooks/server_comfyui/colab_app_comfyui_nunchaku.ipynb` | Google Colab | ComfyUI (Nunchaku) |
+| `notebooks/server_comfyui/paperspace_app_comfyui.ipynb` | Paperspace | ComfyUI (AIO) |
+| `notebooks/server_comfyui/paperspace_app_comfyui_gguf.ipynb` | Paperspace | ComfyUI (GGUF) |
+| `notebooks/server_comfyui/paperspace_app_comfyui_nunchaku.ipynb` | Paperspace | ComfyUI (Nunchaku) |
+
+#### ComfyUI Installation (English)
+
+ComfyUI servers require a separate ComfyUI installation.
+
+**Windows:** Use one of the following tools for easy setup:
+
+| Tool | Features |
+|------|----------|
+| [**StabilityMatrix**](https://github.com/LykosAI/StabilityMatrix) | Manages multiple UIs (ComfyUI/Forge/A1111). Model management & one-click install |
+| [**ComfyUI-Easy-Install**](https://github.com/Tavris1/ComfyUI-Easy-Install) | Lightweight ComfyUI-specific installer. Minimal setup steps |
+| [**SimpleComfyUI**](https://github.com/Zuntan03/SimpleComfyUi) | Simple setup tool with Japanese support. Beginner-friendly |
+
+These tools automate Python and CUDA setup, making installation much easier than manual setup.
+
+<details>
+<summary>Manual installation (if not using the tools above)</summary>
+
+```powershell
+git clone https://github.com/comfyanonymous/ComfyUI.git
+cd ComfyUI
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu130
+```
+
+</details>
+
+**Linux / Cloud:** Jupyter Notebooks for Google Colab and Paperspace are available in `notebooks/server_comfyui/`. They handle ComfyUI setup and tunnel exposure in one go. See the notebook table above.
 
 ### ComfyUI カスタムノードインストール
 

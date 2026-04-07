@@ -12,6 +12,19 @@ import time
 import uuid
 
 
+def _upload_or_placeholder(upload_fn, image_bytes: bytes | None, suffix: str) -> str:
+    """Upload image bytes or a white placeholder, return stored name."""
+    if image_bytes:
+        name = f"enhance_{uuid.uuid4().hex[:8]}{suffix}.png"
+        return upload_fn(image_bytes, name)
+    from PIL import Image
+    img = Image.new("RGB", (256, 256), (255, 255, 255))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    name = f"enhance_{uuid.uuid4().hex[:8]}{suffix}_blank.png"
+    return upload_fn(buf.getvalue(), name)
+
+
 def run_enhance(
     upload_fn,
     submit_fn,
@@ -19,6 +32,7 @@ def run_enhance(
     workflow_template: dict,
     prompt_text: str,
     image_bytes: bytes | None = None,
+    image2_bytes: bytes | None = None,
     timeout: float = 360,
 ) -> str:
     """Run enhance prompt workflow on ComfyUI and return enhanced text.
@@ -29,7 +43,8 @@ def run_enhance(
         get_history_fn: comfyui_get_history(prompt_id) -> dict
         workflow_template: Parsed enhance workflow JSON
         prompt_text: User's short prompt to enhance
-        image_bytes: Optional input image bytes (PNG/JPEG)
+        image_bytes: Optional input image bytes (PNG/JPEG) for Img1
+        image2_bytes: Optional input image bytes (PNG/JPEG) for Img2
         timeout: Max wait time in seconds
 
     Returns:
@@ -40,20 +55,9 @@ def run_enhance(
     # Set prompt text (node 35: PrimitiveStringMultiline)
     wf["35"]["inputs"]["value"] = prompt_text
 
-    # Handle image input (node 12: LoadImage)
-    if image_bytes:
-        img_name = f"enhance_{uuid.uuid4().hex[:8]}.png"
-        stored = upload_fn(image_bytes, img_name)
-        wf["12"]["inputs"]["image"] = stored
-    else:
-        # Upload a small white placeholder so the workflow graph stays intact
-        from PIL import Image
-        img = Image.new("RGB", (256, 256), (255, 255, 255))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        img_name = f"enhance_{uuid.uuid4().hex[:8]}_blank.png"
-        stored = upload_fn(buf.getvalue(), img_name)
-        wf["12"]["inputs"]["image"] = stored
+    # Handle image inputs (node 12: Img1, node 59: Img2)
+    wf["12"]["inputs"]["image"] = _upload_or_placeholder(upload_fn, image_bytes, "")
+    wf["59"]["inputs"]["image"] = _upload_or_placeholder(upload_fn, image2_bytes, "_img2")
 
     # Submit workflow
     prompt_id = submit_fn(wf)

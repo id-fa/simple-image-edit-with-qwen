@@ -5,7 +5,7 @@
     },
     "class_type": "LoadImage",
     "_meta": {
-      "title": "画像を読み込む"
+      "title": "画像1"
     }
   },
   "33": {
@@ -72,7 +72,7 @@
       "top_p": 0.9,
       "repetition_penalty": 1.2,
       "frame_count": 16,
-      "ctx": 8192,
+      "ctx": 32768,
       "n_batch": 8192,
       "gpu_layers": -1,
       "image_max_tokens": 8192,
@@ -84,13 +84,56 @@
       "keep_model_loaded": false,
       "seed": 2616416516,
       "image": [
-        "12",
+        "61",
+        0
+      ],
+      "image2": [
+        "62",
         0
       ]
     },
     "class_type": "QwenVL-F_GGUF_Advanced",
     "_meta": {
       "title": "QwenVL-F Advanced (GGUF)"
+    }
+  },
+  "59": {
+    "inputs": {
+      "image": "sample.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "画像2"
+    }
+  },
+  "61": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "画像を総ピクセルにスケール"
+    }
+  },
+  "62": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "59",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "画像を総ピクセルにスケール"
     }
   }
 }

@@ -607,10 +607,10 @@ HTML_TEMPLATE = common.load_html_template()
 
 if HAS_ENHANCE:
     from lib.comfyui_enhance import run_enhance
-    def _enhance_prompt(prompt_text, image_bytes):
+    def _enhance_prompt(prompt_text, image_bytes, image2_bytes=None):
         return run_enhance(
             comfyui_upload_image, comfyui_submit_prompt, comfyui_get_history,
-            ENHANCE_WF_TEMPLATE, prompt_text, image_bytes,
+            ENHANCE_WF_TEMPLATE, prompt_text, image_bytes, image2_bytes,
         )
 
 register_routes(

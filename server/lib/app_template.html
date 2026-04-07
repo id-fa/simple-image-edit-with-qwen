@@ -792,6 +792,32 @@ async function doEnhance() {
       } catch (e) { /* proceed without image */ }
     }
 
+    // Try to include Img2 image for context-aware enhancement
+    const image2Input = document.getElementById('image2');
+    const hasFile2 = image2Input && image2Input.files && image2Input.files[0];
+    if (hasFile2) {
+      fd.append('image2', image2Input.files[0]);
+    } else if (selectedSlot2) {
+      try {
+        const parts2 = selectedSlot2.split(':');
+        let imgUrl2 = '';
+        if (parts2[0] === 'drawing') {
+          imgUrl2 = '/api/drawing/' + parts2[1] + authQuery();
+        } else if (parts2[1] === 'result') {
+          imgUrl2 = '/api/result/' + parts2[0] + authQuery();
+        } else if (parts2[1] === 'input') {
+          imgUrl2 = '/api/input/' + parts2[0] + '/' + parts2[2] + authQuery();
+        }
+        if (imgUrl2) {
+          const imgResp2 = await fetch(imgUrl2);
+          if (imgResp2.ok) {
+            const blob2 = await imgResp2.blob();
+            fd.append('image2', blob2, 'gallery_image2.png');
+          }
+        }
+      } catch (e) { /* proceed without image2 */ }
+    }
+
     const res = await fetch('/api/enhance', { method: 'POST', body: fd });
     const d = await res.json();
     if (d.error) { alert(d.error); return; }
