@@ -849,30 +849,6 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
   });
 });
 
-// Result slot handler (for Img1/Img2 radio buttons on result area)
-function handleResultSlot(slot, value, radioEl) {
-  const current = slot === 1 ? selectedSlot1 : selectedSlot2;
-  if (current === value) {
-    // Already selected — toggle off
-    if (radioEl) radioEl.checked = false;
-    if (slot === 1) selectedSlot1 = null; else selectedSlot2 = null;
-    updateSlotIndicators();
-    return;
-  }
-  if (slot === 1) {
-    selectedSlot1 = value;
-    clearFileForSlot(1);
-    const t2i = document.getElementById('t2i');
-    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
-  } else {
-    selectedSlot2 = value;
-    clearFileForSlot(2);
-    const t2i = document.getElementById('t2i');
-    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
-  }
-  updateSlotIndicators();
-}
-
 // queue info polling
 function updateQueueInfo() {
   fetch('/api/queue_info')
@@ -1090,6 +1066,30 @@ form.addEventListener('submit', async (e) => {
 });
 
 } // end initApp
+
+// Result slot handler (for Img1/Img2 radio buttons on result area)
+function handleResultSlot(slot, value, radioEl) {
+  const current = slot === 1 ? selectedSlot1 : selectedSlot2;
+  if (current === value) {
+    // Already selected — toggle off
+    if (radioEl) radioEl.checked = false;
+    if (slot === 1) selectedSlot1 = null; else selectedSlot2 = null;
+    updateSlotIndicators();
+    return;
+  }
+  if (slot === 1) {
+    selectedSlot1 = value;
+    clearFileForSlot(1);
+    const t2i = document.getElementById('t2i');
+    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
+  } else {
+    selectedSlot2 = value;
+    clearFileForSlot(2);
+    const t2i = document.getElementById('t2i');
+    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
+  }
+  updateSlotIndicators();
+}
 
 // === Gallery ===
 function escapeHtml(s) {
