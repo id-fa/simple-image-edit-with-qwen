@@ -933,13 +933,6 @@ form.addEventListener('submit', async (e) => {
     fd.append('loras', JSON.stringify(sel));
   }
 
-  // Clear enhance undo state (already captured in form data)
-  if (typeof preEnhancePrompt !== 'undefined') {
-    preEnhancePrompt = null;
-    const undoBtn = document.getElementById('enhanceUndoBtn');
-    if (undoBtn) undoBtn.style.display = 'none';
-  }
-
   submitBtn.disabled = true;
   cancelBtn.style.display = 'inline-block';
   cancelBtn.disabled = false;
