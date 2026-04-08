@@ -249,6 +249,10 @@ def _wait_ws(prompt_id: str, job_id: str, timeout: float) -> dict | None:
         ws.connect(ws_url)
     except Exception as ex:
         print(f"[warn] WS connect failed, falling back to polling: {ex}", file=sys.stderr)
+        try:
+            ws.close()
+        except Exception:
+            pass
         return _wait_poll(prompt_id, job_id, timeout)
 
     done = False
@@ -569,17 +573,25 @@ def worker_loop():
                 tw, th = round_up(tw, W_MULT), round_up(th, H_MULT)
                 img = Image.new("RGB", (tw, th), (255, 255, 255))
                 buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                fname = comfyui_upload_image(buf.getvalue(), f"{job_id}_t2i.png")
-                image_names.append(fname)
+                try:
+                    img.save(buf, format="PNG")
+                    fname = comfyui_upload_image(buf.getvalue(), f"{job_id}_t2i.png")
+                    image_names.append(fname)
+                finally:
+                    buf.close()
+                    img.close()
             else:
                 for i, img_path in enumerate(job["input_paths"]):
                     img = Image.open(img_path).convert("RGB")
                     img = preprocess_image(img, job["pre_resize"])
                     buf = io.BytesIO()
-                    img.save(buf, format="PNG")
-                    fname = comfyui_upload_image(buf.getvalue(), f"{job_id}_in{i}.png")
-                    image_names.append(fname)
+                    try:
+                        img.save(buf, format="PNG")
+                        fname = comfyui_upload_image(buf.getvalue(), f"{job_id}_in{i}.png")
+                        image_names.append(fname)
+                    finally:
+                        buf.close()
+                        img.close()
 
             # Resolve LoRA selection
             lora_selection = []
@@ -649,6 +661,8 @@ def worker_loop():
                 if common.processing_queue and common.processing_queue[0] == job_id:
                     common.processing_queue.popleft()
                 common.current_processing = None
+                if job_id in common.jobs:
+                    common.jobs[job_id].pop("preview", None)
             gc.collect()
 
 

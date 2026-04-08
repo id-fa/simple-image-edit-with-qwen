@@ -340,7 +340,12 @@ def worker_loop():
             if pipe is None:
                 raise RuntimeError("Pipeline is not loaded / パイプラインが読み込まれていません")
 
-            result_img = run_inference(pipe, image_list, job["prompt"], job["seed"], job_id)
+            try:
+                result_img = run_inference(pipe, image_list, job["prompt"], job["seed"], job_id)
+            finally:
+                for _img in image_list:
+                    _img.close()
+                del image_list
 
             if job_id in common.cancel_requests:
                 with common.job_lock:

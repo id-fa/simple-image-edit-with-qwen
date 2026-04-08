@@ -334,6 +334,9 @@ def cleanup_old_room_dbs(db_dir: str | Path, max_age_sec: float = 86400):
     for f in d.glob("room_*.db"):
         try:
             if f.stat().st_mtime < cutoff:
+                # Remove from in-memory cache first
+                cache_key = str(f)
+                _db_cache.pop(cache_key, None)
                 f.unlink(missing_ok=True)
                 # Also remove WAL and SHM files
                 f.with_suffix(".db-wal").unlink(missing_ok=True)

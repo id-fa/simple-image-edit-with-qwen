@@ -248,7 +248,7 @@ python app_comfyui_gguf.py --preset "高画質化::Enhance quality." --preset "�
 - Continuous mode: Checkbox to auto-set generation result as Img1 for iterative editing. Result area also shows Img1/Img2 radio buttons for immediate reuse without waiting for gallery refresh
 - Preview during generation (ComfyUI only): Checkbox to show/hide real-time preview images from ComfyUI's WebSocket binary frames. Requires ComfyUI preview method enabled (Settings → Preview Method). Preview image displayed below progress bar, cleared on completion
 - Polling safety: Auto-stops polling after 2 min with no response (timeout) or 3 consecutive auth errors
-- Multi-LoRA support: `--lora` repeatable, WebUI shows checkboxes + strength sliders (-2.0–2.0, default unchecked). Selected LoRAs applied dynamically per generation. Nunchaku: pipeline reloads when LoRA config changes (CUDA kernels cache buffers, no runtime toggle). AIO/GGUF: `set_adapters()` for instant switching. Incompatible LoRAs are skipped gracefully (no crash). ComfyUI servers without `--comfyui-path`: LoRAs discovered via ComfyUI `/object_info` API, shown in collapsible UI section (default collapsed, count displayed), grouped by folder path with section headers. ComfyUI servers with `--comfyui-path`: LoRAs from local `server/LoRA/` folder
+- Multi-LoRA support: `--lora` repeatable, WebUI shows checkboxes + strength sliders (-2.0–2.0, default unchecked). Selected LoRAs applied dynamically per generation. Nunchaku: pipeline reloads when LoRA config changes (CUDA kernels cache buffers, no runtime toggle). AIO/GGUF: `set_adapters()` for instant switching. Incompatible LoRAs are skipped gracefully (no crash). ComfyUI servers without `--comfyui-path`: LoRAs discovered via ComfyUI `/object_info` API only (server/LoRA/ folder is NOT scanned — path not registered in ComfyUI), shown in collapsible UI section (default collapsed, count displayed), grouped by folder path with section headers. ComfyUI servers with `--comfyui-path`: LoRAs from local `server/LoRA/` folder (registered via `extra_model_paths.yaml`)
 - Model info display: pipeline, transformer, text encoder class, tokenizer, VAE class, dtype, LoRA (LoRA list shown only when `--comfyui-path` specified for ComfyUI servers)
 - Error messages: Japanese/English bilingual (i18n)
 - Gallery mode (`--gallery`): Browse past generation history, click thumbnails to enlarge, download links on each image, reuse gallery images as input for new generations via radio button selection (Img1/Img2 slots). Selecting a gallery image automatically disables t2i mode. Selected image shown as thumbnail + ID text below the file input
@@ -431,14 +431,14 @@ All scripts share this preprocessing flow:
 - Workflow node IDs centralized in `WF_NODE` dict for easy remapping when workflow is re-exported
 - Images uploaded to ComfyUI via `POST /upload/image`, workflow submitted via `POST /prompt`
 - Progress tracking via WebSocket (`websocket-client`); binary frames parsed for preview images, falls back to polling if not installed
-- Preview images: ComfyUI binary WebSocket frames (8-byte header + JPEG/PNG) displayed during generation via `/api/preview/<job_id>`. Togglable via "Show preview during generation" checkbox
+- Preview images: ComfyUI binary WebSocket frames (8-byte header + JPEG/PNG) displayed during generation via `/api/preview/<job_id>`. Togglable via "Show preview during generation" checkbox. Preview binary data cleared from job dict on completion/error/cancel to avoid memory accumulation
 - Cancel via `POST /interrupt` on ComfyUI API
 - Result retrieved from `GET /history/{prompt_id}` → `GET /view`
 - Pre-resize: `ImageScaleToTotalPixels` nodes in workflow, megapixels set from pre-resize selection (1M/2M), `resolution_steps=16` for model alignment
-- LoRA: scans `server/LoRA/` folder, matches against ComfyUI's known LoRAs via `/object_info/LoraLoaderModelOnly`. Workflow has 3 `LoraLoaderModelOnly` slots chained (UNETLoader → slot1 → slot2 → slot3 → ModelSamplingAuraFlow); unused slots are removed from workflow and chain is rewired
+- LoRA: when `--comfyui-path` specified, scans `server/LoRA/` folder and matches against ComfyUI's known LoRAs via `/object_info/LoraLoaderModelOnly`; without `--comfyui-path`, only ComfyUI-known LoRAs are listed (server/LoRA/ not scanned). Workflow has 3 `LoraLoaderModelOnly` slots chained (UNETLoader → slot1 → slot2 → slot3 → ModelSamplingAuraFlow); unused slots are removed from workflow and chain is rewired
 - `--comfyui-path`: auto-registers LoRA path in `extra_model_paths.yaml` and reboots ComfyUI via Manager API (`GET /manager/reboot`)
 - Steps/CFG: set directly on KSampler node
-- HTML template: shared `server/lib/app_template.html` (unified template for all 6 servers). Jinja2 variables: `server_title`, `pre_resize_options`, `has_preview` (ComfyUI-only: preview checkbox, preview area), `has_enhance` (ComfyUI-only: Enhance button). JS scope structure: `initApp()` wraps per-session UI logic (form handlers, polling); functions called from inline `onclick` handlers in dynamically generated HTML (e.g. `handleResultSlot`, `openDrawingEditor`) must be defined at global scope (outside `initApp()`), not inside it
+- HTML template: shared `server/lib/app_template.html` (unified template for all 6 servers). Jinja2 variables: `server_title`, `pre_resize_options`, `has_preview` (ComfyUI-only: preview checkbox, preview area), `has_enhance` (ComfyUI-only: Enhance button). JS scope structure: `initApp()` wraps per-session UI logic (form handlers, polling); functions called from inline `onclick` handlers in dynamically generated HTML (e.g. `handleResultSlot`, `openDrawingEditor`) must be defined at global scope (outside `initApp()`), not inside it. JS memory management: Blob URLs revoked before re-creation, gallery/drawings radio buttons use event delegation (single listener on container, not per-element), gallery update timer paused on tab hide via `visibilitychange`, temporary canvases freed after use (`width=0`), `deParseColor` reuses a single shared canvas
 - CLIP: `CLIPLoaderGGUF` (GGUF CLIP, e.g. `Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf`)
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (UNET/CLIP GGUF/VAE), LoRA path registration
 
@@ -456,7 +456,7 @@ All scripts share this preprocessing flow:
 - Workflow template loaded from `server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_api.json`
 - `ImageScaleToTotalPixels` for both img1 (93) and img2 (138)
 - Prompt set directly on `TextEncodeQwenImageEditPlus` nodes (no separate prompt text node)
-- LoRA: via `NunchakuQwenImageLoraStackV3` custom node — `lora_count` + `enabled_N`/`lora_name_N`/`lora_strength_N` (dynamic slots). Scans `server/LoRA/` folder directly (files registered by filename, expected in ComfyUI's search path via `extra_model_paths.yaml`)
+- LoRA: via `NunchakuQwenImageLoraStackV3` custom node — `lora_count` + `enabled_N`/`lora_name_N`/`lora_strength_N` (dynamic slots). When `--comfyui-path` specified, scans `server/LoRA/` folder directly (files registered by filename, expected in ComfyUI's search path via `extra_model_paths.yaml`); without `--comfyui-path`, only ComfyUI-known LoRAs are listed
 - No UNETLoader (nunchaku model loaded by `NunchakuQwenImageDiTLoader` node 133)
 - CLIP: `CLIPLoaderGGUFMultiGPU` (GGUF CLIP with CPU offload via `pollockjj/ComfyUI-MultiGPU`)
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (Nunchaku/CLIP GGUF/VAE), NunchakuQwenImageLoraStackV3 node availability
@@ -477,13 +477,14 @@ All scripts share this preprocessing flow:
 - Tables: `gallery_jobs` (job_id, created, prompt, seed, t2i, input_count, user_hash, status, input_paths JSON, result_path, original_prompt, input_names JSON), `drawings` (drawing_id, user_hash, created, type, source, path, bg_path, overlay_path)
 - Room isolation: `get_room_db(db_dir, room_name)` → cached `GalleryDB` instances, room name hashed (SHA-256) to `room_{hash}.db`
 - Dual lookup pattern: in-memory job queue (transient, for active jobs) vs SQLite gallery (persistent, for history). Gallery route reads DB first, then merges in-memory "done" jobs not yet persisted
-- `cleanup_old_room_dbs(db_dir)`: removes room DB files with no access for 7 days
+- `cleanup_old_room_dbs(db_dir)`: removes room DB files with no access for 7 days, and evicts corresponding entries from the in-memory `_db_cache`
 
 **Shared Server Modules** (`server/server_common.py`, `server/server_routes.py`, `server/image_utils.py`):
 - `server_common.py`: Global state (Flask app, job queue, locks, config), `get_user_hash()`, `resolve_gallery_ref()`, `cleanup_loop()`, `load_html_template()`, `add_common_args()`/`apply_common_args()`, `persist_job_to_db()`, `start_server_threads()`
 - `server_routes.py`: `register_routes()` — all shared Flask routes (submit, status, cancel, result, translate, enhance, gallery, gallery_delete, serve_input, model_info, loras, queue_info, drawing CRUD). Parameterized by `server_title`, `pre_resize_options`, `pre_resize_map`, `has_preview`, `has_enhance`, `enhance_fn`, `get_total_steps`, `prompt_default`
 - `image_utils.py`: `round_up()`, `pre_resize_to_total_pixels()`, `fit_and_align()`, `preprocess_image()`, `parse_lora_args()` — used by diffusers servers only (ComfyUI servers have inline image processing)
 - Each server script keeps only: fixed constants, pipeline/workflow management, inference/worker loop, and `main()` with server-specific args
+- Worker loop resource management: PIL Images and BytesIO buffers are closed via `try/finally` after use. Diffusers servers close `image_list` entries after inference. ComfyUI servers close images/buffers after upload. WebSocket connections are closed even on `connect()` failure (before polling fallback)
 
 ### Configurable Parameters
 

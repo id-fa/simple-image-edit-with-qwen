@@ -685,6 +685,7 @@ function clearGallerySlot(slot) {
 function setupPreview(input, preview, slot) {
   input.addEventListener('change', () => {
     if (input.files && input.files[0]) {
+      if (preview.src && preview.src.startsWith('blob:')) URL.revokeObjectURL(preview.src);
       preview.src = URL.createObjectURL(input.files[0]);
       preview.style.display = 'block';
       clearGallerySlot(slot);
@@ -711,6 +712,7 @@ function setupDrop(slotEl, inputEl, previewEl, slot) {
     const files = e.dataTransfer.files;
     if (files.length > 0 && files[0].type.startsWith('image/')) {
       inputEl.files = files;
+      if (previewEl.src && previewEl.src.startsWith('blob:')) URL.revokeObjectURL(previewEl.src);
       previewEl.src = URL.createObjectURL(files[0]);
       previewEl.style.display = 'block';
       clearGallerySlot(slot);
@@ -1232,6 +1234,7 @@ async function pauseDrawing() {
     type: 'draft',
     source: deSourceUrl
   };
+  tmp.width = 0; tmp.height = 0;
   if (sessionPassword) body.password = sessionPassword;
   if (sessionRoom) body.room = sessionRoom;
 
@@ -1396,6 +1399,7 @@ function deCopyRegion(source) {
     tmpCtx.drawImage(bgCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
     tmpCtx.drawImage(drawCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
   }
+  if (deClipboard) { deClipboard.width = 0; deClipboard.height = 0; }
   deClipboard = tmp;
   const btn = document.getElementById('dePasteBtn');
   if (btn) { btn.disabled = false; btn.style.background = '#2a2a6a'; }
@@ -1595,8 +1599,11 @@ function deAirbrushSpray(ctx, x, y, radius, color, density) {
   }
 }
 
+const deColorParseCanvas = document.createElement('canvas');
+deColorParseCanvas.width = 1; deColorParseCanvas.height = 1;
 function deParseColor(color) {
-  const ctx = document.createElement('canvas').getContext('2d');
+  const ctx = deColorParseCanvas.getContext('2d');
+  ctx.clearRect(0, 0, 1, 1);
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, 1, 1);
   const d = ctx.getImageData(0, 0, 1, 1).data;
@@ -1823,6 +1830,7 @@ async function saveDrawingToServer(type) {
     tmpCtx.drawImage(drawCanvas, 0, 0);
   }
   const dataUrl = tmp.toDataURL('image/png');
+  tmp.width = 0; tmp.height = 0;
 
   try {
     const body = { image: dataUrl, type: type, source: deSourceUrl };
@@ -1892,26 +1900,29 @@ function renderDrawings(items) {
     }
   }
   container.innerHTML = html;
+}
 
-  function uncheckT2i() {
-    const t2i = document.getElementById('t2i');
-    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
-  }
-  container.querySelectorAll('input[name="gallery_slot1"]').forEach(r => {
-    r.addEventListener('click', () => {
+// Event delegation for drawings radio buttons (avoids re-adding listeners on each render)
+(function() {
+  const container = document.getElementById('drawingsList');
+  if (!container) return;
+  container.addEventListener('click', function(e) {
+    const r = e.target.closest('input[name="gallery_slot1"], input[name="gallery_slot2"]');
+    if (!r) return;
+    function uncheckT2i() {
+      const t2i = document.getElementById('t2i');
+      if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
+    }
+    if (r.name === 'gallery_slot1') {
       if (selectedSlot1 === r.value) { selectedSlot1 = null; setTimeout(() => { r.checked = false; }, 0); }
       else { selectedSlot1 = r.value; uncheckT2i(); clearFileForSlot(1); }
-      updateSlotIndicators();
-    });
-  });
-  container.querySelectorAll('input[name="gallery_slot2"]').forEach(r => {
-    r.addEventListener('click', () => {
+    } else {
       if (selectedSlot2 === r.value) { selectedSlot2 = null; setTimeout(() => { r.checked = false; }, 0); }
       else { selectedSlot2 = r.value; uncheckT2i(); clearFileForSlot(2); }
-      updateSlotIndicators();
-    });
+    }
+    updateSlotIndicators();
   });
-}
+})();
 
 function deleteDrawing(drawingId) {
   if (!confirm('Delete this drawing?')) return;
@@ -2058,32 +2069,34 @@ function renderGallery(items) {
   if (selectedSlot2 && !selectedSlot2.startsWith('drawing:') && !allRefs.has(selectedSlot2)) selectedSlot2 = null;
 
   container.innerHTML = items.map(renderGalleryItem).join('');
-
-  // Prompt expand
-  container.querySelectorAll('.gallery-prompt').forEach(el => {
-    el.addEventListener('click', () => el.classList.toggle('expanded'));
-  });
-  // Radio state sync + click-to-deselect + uncheck t2i
-  function uncheckT2i() {
-    const t2i = document.getElementById('t2i');
-    if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
-  }
-  container.querySelectorAll('input[name="gallery_slot1"]').forEach(r => {
-    r.addEventListener('click', () => {
-      if (selectedSlot1 === r.value) { selectedSlot1 = null; setTimeout(() => { r.checked = false; }, 0); }
-      else { selectedSlot1 = r.value; uncheckT2i(); clearFileForSlot(1); }
-      updateSlotIndicators();
-    });
-  });
-  container.querySelectorAll('input[name="gallery_slot2"]').forEach(r => {
-    r.addEventListener('click', () => {
-      if (selectedSlot2 === r.value) { selectedSlot2 = null; setTimeout(() => { r.checked = false; }, 0); }
-      else { selectedSlot2 = r.value; uncheckT2i(); clearFileForSlot(2); }
-      updateSlotIndicators();
-    });
-  });
   updateSlotIndicators();
 }
+
+// Event delegation for gallery (avoids re-adding listeners every 30s render)
+(function() {
+  const container = document.getElementById('galleryList');
+  if (!container) return;
+  container.addEventListener('click', function(e) {
+    // Prompt expand
+    const prompt = e.target.closest('.gallery-prompt');
+    if (prompt) { prompt.classList.toggle('expanded'); return; }
+    // Radio buttons
+    const r = e.target.closest('input[name="gallery_slot1"], input[name="gallery_slot2"]');
+    if (!r) return;
+    function uncheckT2i() {
+      const t2i = document.getElementById('t2i');
+      if (t2i && t2i.checked) { t2i.checked = false; t2i.dispatchEvent(new Event('change')); }
+    }
+    if (r.name === 'gallery_slot1') {
+      if (selectedSlot1 === r.value) { selectedSlot1 = null; setTimeout(() => { r.checked = false; }, 0); }
+      else { selectedSlot1 = r.value; uncheckT2i(); clearFileForSlot(1); }
+    } else {
+      if (selectedSlot2 === r.value) { selectedSlot2 = null; setTimeout(() => { r.checked = false; }, 0); }
+      else { selectedSlot2 = r.value; uncheckT2i(); clearFileForSlot(2); }
+    }
+    updateSlotIndicators();
+  });
+})();
 
 function updateGallery() {
   fetch('/api/gallery' + authQuery())
@@ -2099,10 +2112,21 @@ function updateGallery() {
 initDrawingEditor();
 updateDrawings();
 
+let galleryUpdateTimer = null;
 if (document.getElementById('gallerySection')) {
-  setInterval(updateGallery, 30000);
+  galleryUpdateTimer = setInterval(updateGallery, 30000);
   updateGallery();
 }
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (galleryUpdateTimer) { clearInterval(galleryUpdateTimer); galleryUpdateTimer = null; }
+  } else {
+    if (!galleryUpdateTimer && document.getElementById('gallerySection')) {
+      updateGallery();
+      galleryUpdateTimer = setInterval(updateGallery, 30000);
+    }
+  }
+});
 </script>
 </body>
 </html>

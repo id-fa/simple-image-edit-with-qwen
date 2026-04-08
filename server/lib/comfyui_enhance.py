@@ -20,9 +20,13 @@ def _upload_or_placeholder(upload_fn, image_bytes: bytes | None, suffix: str) ->
     from PIL import Image
     img = Image.new("RGB", (256, 256), (255, 255, 255))
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    name = f"enhance_{uuid.uuid4().hex[:8]}{suffix}_blank.png"
-    return upload_fn(buf.getvalue(), name)
+    try:
+        img.save(buf, format="PNG")
+        name = f"enhance_{uuid.uuid4().hex[:8]}{suffix}_blank.png"
+        return upload_fn(buf.getvalue(), name)
+    finally:
+        buf.close()
+        img.close()
 
 
 def run_enhance(
