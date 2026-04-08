@@ -809,8 +809,9 @@ def main():
             print("[warn] ComfyUI reboot failed. LoRAs may not be fully available.", file=sys.stderr)
             print("[warn] Restart ComfyUI manually and re-run this server.", file=sys.stderr)
 
-    # Scan LoRA folder
-    common.lora_registry.extend(scan_lora_folder())
+    # Scan LoRA folder (only when --comfyui-path registers the path in ComfyUI)
+    if args.comfyui_path:
+        common.lora_registry.extend(scan_lora_folder())
 
     # If --comfyui-path not specified, also register all ComfyUI-known LoRAs
     if not args.comfyui_path:

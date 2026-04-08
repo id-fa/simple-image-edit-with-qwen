@@ -745,8 +745,9 @@ def main():
         else:
             print("[warn] ComfyUI reboot failed. LoRAs may not be fully available.", file=sys.stderr)
 
-    # Scan LoRA folder
-    common.lora_registry.extend(scan_lora_folder(available.get("lora_models", [])))
+    # Scan LoRA folder (only when --comfyui-path registers the path in ComfyUI)
+    if args.comfyui_path:
+        common.lora_registry.extend(scan_lora_folder(available.get("lora_models", [])))
 
     # If --comfyui-path not specified, also register all ComfyUI-known LoRAs
     if not args.comfyui_path:
