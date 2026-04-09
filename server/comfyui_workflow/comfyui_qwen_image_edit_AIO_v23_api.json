@@ -1,20 +1,7 @@
 {
-  "60": {
-    "inputs": {
-      "filename_prefix": "ComfyUI",
-      "images": [
-        "444",
-        0
-      ]
-    },
-    "class_type": "SaveImage",
-    "_meta": {
-      "title": "画像を保存"
-    }
-  },
   "78": {
     "inputs": {
-      "image": "input_image.png"
+      "image": "example.png"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -23,7 +10,7 @@
   },
   "435": {
     "inputs": {
-      "value": ""
+      "value": "change background to bathroom"
     },
     "class_type": "PrimitiveStringMultiline",
     "_meta": {
@@ -55,7 +42,7 @@
   "439": {
     "inputs": {
       "unet_name": "Qwen-Rapid-AIO-NSFW-v23.safetensors",
-      "weight_dtype": "default"
+      "weight_dtype": "fp8_e4m3fn_fast"
     },
     "class_type": "UNETLoader",
     "_meta": {
@@ -66,7 +53,7 @@
     "inputs": {
       "prompt": "",
       "clip": [
-        "454",
+        "456",
         0
       ],
       "vae": [
@@ -107,7 +94,7 @@
         0
       ],
       "clip": [
-        "454",
+        "456",
         0
       ],
       "vae": [
@@ -162,7 +149,7 @@
   },
   "445": {
     "inputs": {
-      "lora_name": "gnass_2512_qwen.safetensors",
+      "lora_name": "qwen-image\\anything2real_2601_A_final_patched.safetensors",
       "strength_model": 1,
       "model": [
         "439",
@@ -176,7 +163,7 @@
   },
   "447": {
     "inputs": {
-      "seed": 0,
+      "seed": 1121932296759087,
       "steps": 8,
       "cfg": 1,
       "sampler_name": "euler_ancestral",
@@ -206,7 +193,7 @@
   },
   "448": {
     "inputs": {
-      "image": "input_image.png"
+      "image": "example.png"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -271,14 +258,27 @@
       "title": "LoRAローダーモデルのみ"
     }
   },
-  "454": {
+  "455": {
+    "inputs": {
+      "images": [
+        "444",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "画像プレビュー"
+    }
+  },
+  "456": {
     "inputs": {
       "clip_name": "Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf",
-      "type": "qwen_image"
+      "type": "qwen_image",
+      "device": "cpu"
     },
-    "class_type": "CLIPLoaderGGUF",
+    "class_type": "CLIPLoaderGGUFMultiGPU",
     "_meta": {
-      "title": "CLIPLoader (GGUF)"
+      "title": "CLIPLoaderGGUFMultiGPU"
     }
   }
 }

@@ -114,7 +114,8 @@ WF_NODE = {
     "nunchaku_model":   "133",       # NunchakuQwenImageDiTLoader
     "nunchaku_lora":    "136",       # NunchakuQwenImageLoraStackV3
     "ksampler":         "3",         # KSampler
-    "save_image":       "60",        # SaveImage - output
+    "prompt_text":      "143",       # PrimitiveStringMultiline - Prompt
+    "save_image":       "142",       # PreviewImage - output
 }
 
 # Max LoRA slots in NunchakuQwenImageLoraStackV3
@@ -507,8 +508,8 @@ def build_workflow(image1_name: str, image2_name: str | None, prompt: str,
     wf[N["image_scale1"]]["inputs"]["megapixels"] = megapixels
     wf[N["image_scale2"]]["inputs"]["megapixels"] = megapixels
 
-    # Prompt — directly on TextEncodeQwenImageEditPlus nodes
-    wf[N["text_pos"]]["inputs"]["prompt"] = prompt
+    # Prompt — via PrimitiveStringMultiline node
+    wf[N["prompt_text"]]["inputs"]["value"] = prompt
 
     # Seed, Steps, CFG — directly on KSampler
     wf[N["ksampler"]]["inputs"]["seed"] = seed if seed is not None else random.randint(0, 2**32 - 1)

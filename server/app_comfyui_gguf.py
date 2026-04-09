@@ -105,7 +105,7 @@ WF_NODE = {
     "image_scale2":     "450",       # ImageScaleToTotalPixels - img2
     "prompt_text":      "435",       # PrimitiveStringMultiline - Prompt
     "gguf_loader":      "456",       # UnetLoaderGGUF - GGUF model
-    "clip_loader_gguf": "455",       # CLIPLoaderGGUF - GGUF CLIP
+    "clip_loader_gguf": "457",       # CLIPLoaderGGUFMultiGPU - GGUF CLIP
     "vae_loader":       "437",       # VAELoader
     "vae_encode":       "443",       # VAEEncode
     "vae_decode":       "444",       # VAEDecode
@@ -117,7 +117,7 @@ WF_NODE = {
     "lora_loader2":     "451",       # LoraLoaderModelOnly (2nd, model <- lora_loader1)
     "lora_loader3":     "452",       # LoraLoaderModelOnly (3rd, model <- lora_loader2)
     "ksampler":         "447",       # KSampler
-    "save_image":       "60",        # SaveImage - output
+    "save_image":       "458",       # PreviewImage - output
 }
 
 
@@ -192,15 +192,22 @@ def comfyui_get_available_models() -> dict:
     for node_class, key, field in [
         ("UnetLoaderGGUF", "gguf_models", "unet_name"),
         ("CLIPLoaderGGUF", "clip_gguf_models", "clip_name"),
+        ("CLIPLoaderGGUFMultiGPU", "clip_gguf_models", "clip_name"),
         ("VAELoader", "vae_models", "vae_name"),
         ("LoraLoaderModelOnly", "lora_models", "lora_name"),
     ]:
         try:
             resp = http_requests.get(f"{comfyui_url}/object_info/{node_class}", timeout=10)
             data = resp.json()
-            info[key] = data[node_class]["input"]["required"][field][0]
+            models = data[node_class]["input"]["required"][field][0]
+            if key in info:
+                seen = set(info[key])
+                info[key].extend(m for m in models if m not in seen)
+            else:
+                info[key] = models
         except Exception:
-            info[key] = []
+            if key not in info:
+                info[key] = []
     return info
 
 

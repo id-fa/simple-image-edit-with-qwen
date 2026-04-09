@@ -102,7 +102,7 @@ WF_NODE = {
     "image_scale2":     "450",
     "prompt_text":      "435",
     "unet_loader":      "439",
-    "clip_loader":      "454",
+    "clip_loader":      "456",
     "vae_loader":       "437",
     "vae_encode":       "443",
     "vae_decode":       "444",
@@ -114,7 +114,7 @@ WF_NODE = {
     "lora_loader2":     "451",
     "lora_loader3":     "452",
     "ksampler":         "447",
-    "save_image":       "60",
+    "save_image":       "455",
 }
 
 
@@ -190,6 +190,7 @@ def comfyui_get_available_models() -> dict:
         ("UNETLoader", "unet_models", "unet_name"),
         ("CLIPLoader", "clip_models", "clip_name"),
         ("CLIPLoaderGGUF", "clip_models", "clip_name"),
+        ("CLIPLoaderGGUFMultiGPU", "clip_models", "clip_name"),
         ("VAELoader", "vae_models", "vae_name"),
         ("LoraLoaderModelOnly", "lora_models", "lora_name"),
     ]:
