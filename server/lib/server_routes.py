@@ -247,6 +247,7 @@ def register_routes(
         rp = None
         input_names = None
         job_user_hash = None
+        job_created = None
         with common.job_lock:
             job = common.jobs.get(job_id)
             if job:
@@ -255,6 +256,7 @@ def register_routes(
                 rp = job["result_path"]
                 input_names = job.get("input_names")
                 job_user_hash = job.get("user_hash")
+                job_created = job.get("created")
         if not rp and common.gallery_enabled:
             room = request.args.get("room", "")
             from lib.gallery_db import get_room_db
@@ -265,12 +267,15 @@ def register_routes(
                 if not input_names and db_job.get("input_names"):
                     input_names = db_job["input_names"]
                     job_user_hash = db_job.get("user_hash")
+                if job_created is None:
+                    job_created = db_job.get("created")
 
         if not rp or not os.path.exists(rp):
             return jsonify({"error": "結果ファイルが見つかりません / Result file not found"}), 404
-        dl_name = f"result_{job_id}.png"
+        date_str = time.strftime("%Y%m%d", time.localtime(job_created or time.time()))
+        dl_name = f"result_qwen-edit_{date_str}_{job_id}.png"
         if input_names and job_user_hash == common.get_user_hash():
-            dl_name = f"{input_names[0]}_result_{job_id}.png"
+            dl_name = f"{input_names[0]}_qwen-edit_{date_str}_{job_id}.png"
         return send_file(rp, mimetype="image/png", as_attachment=True,
                          download_name=dl_name)
 
