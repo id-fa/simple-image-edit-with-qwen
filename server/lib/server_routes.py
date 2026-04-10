@@ -28,6 +28,34 @@ from flask import request, jsonify, send_file, render_template_string
 import lib.server_common as common
 
 
+def _inherit_img1_base_name(ref_str: str, room: str) -> str | None:
+    """When img1 is a gallery reference, walk back to the source job's img1
+    base name (input_names[0]) and append the source job_id, so the download
+    filename lineage accumulates as: {original_stem}_{jobId1}_{jobId2}...
+
+    Returns None for drawing refs, refs to jobs without input_names, or
+    unresolvable refs.
+    """
+    parts = ref_str.split(":")
+    if len(parts) < 2 or parts[0] == "drawing":
+        return None
+    src_job_id = parts[0]
+    src_names = None
+    with common.job_lock:
+        src_job = common.jobs.get(src_job_id)
+        if src_job:
+            src_names = src_job.get("input_names")
+    if not src_names and room:
+        from lib.gallery_db import get_room_db
+        rdb = get_room_db(common.db_dir, room)
+        db_job = rdb.get_job(src_job_id)
+        if db_job:
+            src_names = db_job.get("input_names")
+    if not src_names:
+        return None
+    return f"{src_names[0]}_{src_job_id}"
+
+
 def register_routes(
     *,
     server_title: str,
@@ -106,6 +134,9 @@ def register_routes(
                 if not resolved:
                     return jsonify({"error": "ギャラリー画像1の参照が無効または期限切れです / Gallery image 1 reference is invalid or expired"}), 400
                 input_paths.append(resolved)
+                inherited = _inherit_img1_base_name(g1, room)
+                if inherited:
+                    input_names.append(inherited)
             else:
                 return jsonify({"error": "Image 1 を選択してください / Please select Image 1"}), 400
 
@@ -114,7 +145,6 @@ def register_routes(
                 save2 = common.TMP_DIR / f"{job_id}_in1{ext2}"
                 f2.save(save2)
                 input_paths.append(str(save2))
-                input_names.append(Path(f2.filename).stem)
             elif g2:
                 resolved = common.resolve_gallery_ref(g2, job_id, 1, room)
                 if resolved:
