@@ -750,7 +750,10 @@ document.getElementById('translateJa').addEventListener('click', () => doTransla
 
 // Enhance prompt
 {% if has_enhance %}
+// preEnhancePrompt: persists across submissions (Undo button buffer)
+// originalPromptForSubmit: cleared on each submit (sent as original_prompt to server)
 let preEnhancePrompt = null;
+let originalPromptForSubmit = null;
 
 async function doEnhance() {
   const promptEl = document.getElementById('prompt');
@@ -824,6 +827,7 @@ async function doEnhance() {
     const d = await res.json();
     if (d.error) { alert(d.error); return; }
     preEnhancePrompt = text;
+    originalPromptForSubmit = text;
     promptEl.value = d.enhanced;
     document.getElementById('enhanceUndoBtn').style.display = '';
   } catch (e) { alert('Enhance error: ' + e.message); }
@@ -837,6 +841,7 @@ document.getElementById('enhanceUndoBtn').addEventListener('click', () => {
   if (preEnhancePrompt !== null) {
     document.getElementById('prompt').value = preEnhancePrompt;
     preEnhancePrompt = null;
+    originalPromptForSubmit = null;
     document.getElementById('enhanceUndoBtn').style.display = 'none';
   }
 });
@@ -893,8 +898,9 @@ form.addEventListener('submit', async (e) => {
   const fd = new FormData();
   fd.append('password', document.getElementById('password').value);
   fd.append('prompt', document.getElementById('prompt').value);
-  if (typeof preEnhancePrompt !== 'undefined' && preEnhancePrompt !== null) {
-    fd.append('original_prompt', preEnhancePrompt);
+  if (typeof originalPromptForSubmit !== 'undefined' && originalPromptForSubmit !== null) {
+    fd.append('original_prompt', originalPromptForSubmit);
+    originalPromptForSubmit = null;
   }
   fd.append('pre_resize', document.getElementById('pre_resize').value);
   fd.append('seed', document.getElementById('seed').value);
