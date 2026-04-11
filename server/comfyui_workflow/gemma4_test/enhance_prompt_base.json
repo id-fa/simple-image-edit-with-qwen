@@ -1,0 +1,493 @@
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "revision": 0,
+  "last_node_id": 62,
+  "last_link_id": 23,
+  "nodes": [
+    {
+      "id": 33,
+      "type": "PreviewAny",
+      "pos": [
+        1425,
+        139
+      ],
+      "size": [
+        363,
+        334
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 17
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.2",
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": 61,
+      "type": "ImageScaleToTotalPixels",
+      "pos": [
+        629.0014049586778,
+        -56.61537190082643
+      ],
+      "size": [
+        281.9,
+        106
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 20
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            21
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.2",
+        "Node name for S&R": "ImageScaleToTotalPixels"
+      },
+      "widgets_values": [
+        "lanczos",
+        1,
+        1
+      ]
+    },
+    {
+      "id": 62,
+      "type": "ImageScaleToTotalPixels",
+      "pos": [
+        660.4614049586769,
+        185.38462809917357
+      ],
+      "size": [
+        281.9,
+        106
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 22
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            23
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.2",
+        "Node name for S&R": "ImageScaleToTotalPixels2"
+      },
+      "widgets_values": [
+        "lanczos",
+        1,
+        1
+      ]
+    },
+    {
+      "id": 12,
+      "type": "LoadImage",
+      "pos": [
+        202.84999999999985,
+        -249.94
+      ],
+      "size": [
+        344,
+        314
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            20
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "title": "画像1",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.2",
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "sample.png",
+        "image"
+      ]
+    },
+    {
+      "id": 59,
+      "type": "LoadImage",
+      "pos": [
+        201.8714049586779,
+        115.20462809917366
+      ],
+      "size": [
+        344,
+        314
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            22
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "title": "画像2",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.2",
+        "Node name for S&R": "LoadImage2"
+      },
+      "widgets_values": [
+        "sample.png",
+        "image"
+      ]
+    },
+    {
+      "id": 35,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        141.14000000000001,
+        763.7199999999999
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "title": "User Prompt",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.2",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        "enhance background"
+      ]
+    },
+    {
+      "id": 54,
+      "type": "StringConcatenate",
+      "pos": [
+        557.4719834710744,
+        506.4733884297521
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "string_a",
+          "type": "STRING",
+          "widget": {
+            "name": "string_a"
+          },
+          "link": 9
+        },
+        {
+          "name": "string_b",
+          "type": "STRING",
+          "widget": {
+            "name": "string_b"
+          },
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            18
+          ]
+        }
+      ],
+      "title": "concat",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.2",
+        "Node name for S&R": "StringConcatenate"
+      },
+      "widgets_values": [
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "id": 55,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        62.490000000000094,
+        489.93000000000035
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "title": "System Prompt",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.2",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        "# Edit Prompt Enhancer\n\nYou are a professional edit prompt enhancer. Your task is to generate a direct and specific edit prompt based on the user-provided instruction and the image input conditions.  \nPlease strictly follow the enhancing rules below:\n\n## 1. General Principles\n\n- Keep the enhanced prompt **direct and specific**.  \n- If the instruction is contradictory, vague, or unachievable, prioritize reasonable inference and correction, and supplement details when necessary.  \n- Keep the core intention of the original instruction unchanged, only enhancing its clarity, rationality, and visual feasibility.  \n- All added objects or modifications must align with the logic and style of the edited input image's overall scene.  \n\n## 2. Task-Type Handling Rules\n\n### 1. Add, Delete, Replace Tasks\n- If the instruction is clear (already includes task type, target entity, position, quantity, attributes), preserve the original intent and only refine the grammar.  \n- If the description is vague, supplement with minimal but sufficient details (category, color, size, orientation, position, etc.). For example:  \n    > Original: \"Add an animal\"  \n    > Rewritten: \"Add a light-gray cat in the bottom-right corner, sitting and facing the camera\"  \n- Remove meaningless instructions: e.g., \"Add 0 objects\" should be ignored or flagged as invalid.  \n- For replacement tasks, specify \"Replace Y with X\" and briefly describe the key visual features of X.  \n\n### 2. Text Editing Tasks\n- All text content must be enclosed in English double quotes `\" \"`. Keep the original language of the text, and keep the capitalization.  \n- Both adding new text and replacing existing text are text replacement tasks, For example:  \n    - Replace \"xx\" to \"yy\"  \n    - Replace the mask / bounding box to \"yy\"  \n    - Replace the visual object to \"yy\"  \n- Specify text position, color, and layout only if user has required.  \n- If font is specified, keep the original language of the font.  \n\n### 3. Human (ID) Editing Tasks\n- Emphasize maintaining the person's core visual consistency (ethnicity, gender, age, hairstyle, expression, outfit, etc.).  \n- If modifying appearance (e.g., clothes, hairstyle), ensure the new element is consistent with the original style.  \n- **For expression changes / beauty / make up changes, they must be natural and subtle, never exaggerated — unless the user explicitly requests an exaggerated or dramatic effect.**  \n- Example:  \n    > Original: \"Change the person's hat\"  \n    > Rewritten: \"Replace the man's hat with a dark brown beret; keep smile, short hair, and gray jacket unchanged\"  \n\n### 4. Style Conversion or Enhancement Tasks\n- If a style is specified, describe it concisely using key visual features. For example:  \n    > Original: \"Disco style\"  \n    > Rewritten: \"1970s disco style: flashing lights, disco ball, mirrored walls, colorful tones\"  \n- For style reference, analyze the original image and extract key characteristics (color, composition, texture, lighting, artistic style, etc.), integrating them into the instruction.  \n- **Colorization tasks (including old photo restoration) must use the fixed template:**  \n\"Restore and colorize the photo.\"  \n- Clearly specify the object to be modified. **When the original instruction references specific images (e.g., Picture 1, Picture 2), always preserve these image references in the rewritten prompt.** For example:  \n    > Original: Modify the subject in Picture 1 to match the style of Picture 2.  \n    > Rewritten: Change the girl in Picture 1 to the ink-wash style of Picture 2 — rendered in black-and-white watercolor with soft color transitions.\n- If there are other changes, place the style description at the end.\n\n### 5. Content Filling Tasks\n- For inpainting tasks, always use the fixed template: \"Perform inpainting on this image. The original caption is: \".\n- For outpainting tasks, always use the fixed template: \"\"Extend the image beyond its boundaries using outpainting. The original caption is: \".\n\n### 6. Multi-Image Tasks\n- Rewritten prompts must clearly point out which image's element is being modified. For example:  \n    > Original: \"Replace the subject of picture 1 with the subject of picture 2\"  \n    > Rewritten: \"Replace the girl of picture 1 with the boy of picture 2, keeping picture 2's background unchanged\"  \n- For stylization tasks, describe the reference image's style in the rewritten prompt, while preserving the visual content of the source image.  \n\n## 3. Rationale and Logic Checks\n- Resolve contradictory instructions: e.g., \"Remove all trees but keep all trees\" should be logically corrected.  \n- Add missing key information: e.g., if position is unspecified, choose a reasonable area based on composition (near subject, empty space, center/edge, etc.).  \n\n---\n\nBased on the user's input, automatically determine the appropriate task category and output a single English image prompt that fully complies with the above specifications. Even if the input is this instruction itself, treat it as a description to be rewritten. **Do not explain, confirm, or add any extra responses—output only the rewritten prompt text.**\n\n---\nUser's input:\n\n"
+      ]
+    },
+    {
+      "id": 58,
+      "type": "QwenVL-F_GGUF_Advanced",
+      "pos": [
+        1006.6512396694219,
+        99.19256198347102
+      ],
+      "size": [
+        400,
+        628
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 21
+        },
+        {
+          "name": "image2",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": 23
+        },
+        {
+          "name": "image3",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "video",
+          "shape": 7,
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "custom_prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "custom_prompt"
+          },
+          "link": 18
+        }
+      ],
+      "outputs": [
+        {
+          "name": "RESPONSE",
+          "type": "STRING",
+          "links": [
+            17
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "id-fa/ComfyUI-QwenVL",
+        "ver": "e4463aeee4552ff7b91c1caf2be028ac31982b29",
+        "Node name for S&R": "QwenVL-F_GGUF_Advanced"
+      },
+      "widgets_values": [
+        "gemma-4-E4B-it-heretic-ara.Q8_0.gguf",
+        "auto",
+        "🪄 Prompt Refine & Expand",
+        "",
+        4096,
+        0.6,
+        0.9,
+        1.2,
+        16,
+        16384,
+        4096,
+        -1,
+        4096,
+        1024,
+        0,
+        2097152,
+        false,
+        "",
+        false,
+        2616416516,
+        "randomize"
+      ]
+    }
+  ],
+  "links": [
+    [
+      9,
+      55,
+      0,
+      54,
+      0,
+      "STRING"
+    ],
+    [
+      10,
+      35,
+      0,
+      54,
+      1,
+      "STRING"
+    ],
+    [
+      17,
+      58,
+      0,
+      33,
+      0,
+      "STRING"
+    ],
+    [
+      18,
+      54,
+      0,
+      58,
+      4,
+      "STRING"
+    ],
+    [
+      20,
+      12,
+      0,
+      61,
+      0,
+      "IMAGE"
+    ],
+    [
+      21,
+      61,
+      0,
+      58,
+      0,
+      "IMAGE"
+    ],
+    [
+      22,
+      59,
+      0,
+      62,
+      0,
+      "IMAGE"
+    ],
+    [
+      23,
+      62,
+      0,
+      58,
+      1,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.2100000000000006,
+      "offset": [
+        -414.3215883661965,
+        59.05863122940436
+      ]
+    },
+    "frontendVersion": "1.41.21",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
