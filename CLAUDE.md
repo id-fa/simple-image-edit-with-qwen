@@ -22,7 +22,8 @@ Python scripts for AI-powered image editing using diffusion models:
 11. **server/app_comfyui.py** - Flask web server using ComfyUI API backend for AIO workflow (no torch/diffusers dependency)
 12. **server/app_comfyui_nunchaku.py** - Flask web server using ComfyUI API backend for Nunchaku workflow (no torch/diffusers dependency)
 13. **server/app_comfyui_gguf.py** - Flask web server using ComfyUI API backend for GGUF workflow (no torch/diffusers dependency)
-14. **server/app_wavespeed_qwen2.py** - Flask web server using WaveSpeed AI cloud API for Qwen-Image-2.0-Pro Edit (no local GPU/torch/diffusers dependency)
+14. **server/app_comfyui_klein.py** - Flask web server using ComfyUI API backend for FLUX.2 Klein 9B fp8 workflow (no torch/diffusers dependency)
+15. **server/app_wavespeed_qwen2.py** - Flask web server using WaveSpeed AI cloud API for Qwen-Image-2.0-Pro Edit (no local GPU/torch/diffusers dependency)
 
 ### Google Colab Notebooks (`notebooks/`)
 14. **notebooks/colab_app_gguf.ipynb** - Google Colab notebook for GGUF web server (cloudflared tunnel, A100 recommended)
@@ -39,7 +40,8 @@ Python scripts for AI-powered image editing using diffusion models:
 20. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_api.json** - ComfyUI API format workflow for Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui.py)
 21. **server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_api.json** - ComfyUI API format workflow for Nunchaku Qwen-Image-Edit-2509 Lightning (used by app_comfyui_nunchaku.py)
 22. **server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_gguf_api.json** - ComfyUI API format workflow for GGUF Qwen-Rapid-AIO-NSFW-v23 (used by app_comfyui_gguf.py)
-23. **server/comfyui_workflow/enhance_prompt_api.json** - ComfyUI API format workflow for prompt enhancement via QwenVL GGUF (used by all 3 ComfyUI servers)
+23. **server/comfyui_workflow/comfyui_flux1klein9b_api.json** - ComfyUI API format workflow for FLUX.2 Klein 9B fp8 (used by app_comfyui_klein.py)
+24. **server/comfyui_workflow/enhance_prompt_api.json** - ComfyUI API format workflow for prompt enhancement via QwenVL GGUF (used by all ComfyUI / WaveSpeed servers)
 
 Image editing scripts take a single image as input (with optional `--ref` reference images) and output an edited version. All image scripts support `--t2i` mode for text-to-image generation. The video script (`simple_i2v_ltx2_distilled.py`) supports i2v (image-to-video), flf2v (first+last frame to video via `--ref`), and t2v (text-to-video via `--t2i`). Prompts can be specified via `--prompt` argument or by editing the `PROMPT` constant in the source.
 
@@ -47,7 +49,7 @@ Web servers provide browser GUI with password protection, job queue (1 processin
 
 **Target Environment:** GeForce RTX 3xxx (VRAM 12GB) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
-**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein/LTX-2 cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`). Rapid Qwen, FLUX.2 Klein, and LTX-2 can share the same venv (latest diffusers). ComfyUI servers (`app_comfyui.py`, `app_comfyui_nunchaku.py`, `app_comfyui_gguf.py`) and WaveSpeed server (`app_wavespeed_qwen2.py`) have no torch/diffusers dependency and use their own lightweight venv.
+**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein/LTX-2 cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`). Rapid Qwen, FLUX.2 Klein, and LTX-2 can share the same venv (latest diffusers). ComfyUI servers (`app_comfyui.py`, `app_comfyui_nunchaku.py`, `app_comfyui_gguf.py`, `app_comfyui_klein.py`) and WaveSpeed server (`app_wavespeed_qwen2.py`) have no torch/diffusers dependency and use their own lightweight venv.
 
 ## Running the Scripts
 
@@ -222,6 +224,18 @@ python app_comfyui_gguf.py --gallery --password mysecret
 python app_comfyui_gguf.py --preset "高画質化::Enhance quality." --preset "テキスト除去::Remove all text."
 ```
 
+### ComfyUI Web Server — FLUX.2 Klein 9B workflow (API backend)
+```powershell
+cd server
+python app_comfyui_klein.py
+python app_comfyui_klein.py --password mysecret --port 5000
+python app_comfyui_klein.py --comfyui-url http://192.168.1.100:8188
+python app_comfyui_klein.py --comfyui-path D:\ComfyUI
+python app_comfyui_klein.py --steps 4 --cfg 1.0
+python app_comfyui_klein.py --gallery --password mysecret
+python app_comfyui_klein.py --preset "高画質化::Enhance quality." --preset "顔を差し替える::Replace the face using the reference image."
+```
+
 ### WaveSpeed Web Server — cloud API (no local GPU)
 ```powershell
 cd server
@@ -310,7 +324,7 @@ python app_wavespeed_qwen2.py --preset "高画質化::Enhance quality." --preset
 
 **Note:** AIO server requires significantly more VRAM than GGUF (full bf16 transformer). On Google Colab, use GGUF version instead (A100 recommended).
 
-**Note:** ComfyUI servers (`app_comfyui.py`, `app_comfyui_nunchaku.py`, `app_comfyui_gguf.py`) require a running ComfyUI instance and `city96/ComfyUI-GGUF` custom node (all variants use GGUF CLIP). No torch/diffusers dependency — only flask, requests, pillow, websocket-client. AIO variant requires `Qwen-Rapid-AIO-NSFW-v23.safetensors`, GGUF CLIP (e.g. `Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf` + mmproj), and `qwen_image_vae.safetensors`. Nunchaku variant requires `NunchakuQwenImageLoraStackV3` custom node, `pollockjj/ComfyUI-MultiGPU` custom node (CLIP CPU offload via `CLIPLoaderGGUFMultiGPU`), GGUF CLIP, and `qwen_image_vae.safetensors`. GGUF variant requires a GGUF model for UnetLoaderGGUF (e.g. `Qwen-Rapid-NSFW-v23_Q8_0.gguf`), GGUF CLIP, and `qwen_image_vae.safetensors`. Models are auto-detected from ComfyUI or specified via `--gguf-model`/`--clip-model`. LoRA files in `server/LoRA/` must be in ComfyUI's search path (use `--comfyui-path` for auto-registration).
+**Note:** ComfyUI servers (`app_comfyui.py`, `app_comfyui_nunchaku.py`, `app_comfyui_gguf.py`, `app_comfyui_klein.py`) require a running ComfyUI instance. Qwen variants (AIO/Nunchaku/GGUF) use GGUF CLIP via `city96/ComfyUI-GGUF` custom node; Klein variant uses a standard `CLIPLoader` with a safetensors text encoder (no GGUF CLIP dependency). No torch/diffusers dependency — only flask, requests, pillow, websocket-client. AIO variant requires `Qwen-Rapid-AIO-NSFW-v23.safetensors`, GGUF CLIP (e.g. `Qwen2.5-VL-7B-Instruct-heretic.Q8_0.gguf` + mmproj), and `qwen_image_vae.safetensors`. Nunchaku variant requires `NunchakuQwenImageLoraStackV3` custom node, `pollockjj/ComfyUI-MultiGPU` custom node (CLIP CPU offload via `CLIPLoaderGGUFMultiGPU`), GGUF CLIP, and `qwen_image_vae.safetensors`. GGUF variant requires a GGUF model for UnetLoaderGGUF (e.g. `Qwen-Rapid-NSFW-v23_Q8_0.gguf`), GGUF CLIP, and `qwen_image_vae.safetensors`. Klein variant requires `flux-2-klein-9b-fp8.safetensors`, `qwen_3_8b_fp8mixed.safetensors` (CLIPLoader with `type=flux2`), `full_encoder_small_decoder.safetensors` VAE, and optionally `rgthree-comfy` custom node (`Power Lora Loader (rgthree)`) for LoRA support. Models are auto-detected from ComfyUI or specified via `--gguf-model`/`--clip-model`. LoRA files in `server/LoRA/` must be in ComfyUI's search path (use `--comfyui-path` for auto-registration).
 
 ## Environment Setup
 
@@ -479,6 +493,19 @@ All scripts share this preprocessing flow:
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (Nunchaku/CLIP GGUF/VAE), NunchakuQwenImageLoraStackV3 node availability
 - Shares `app_template.html` with all server variants
 
+**ComfyUI API Backend — FLUX.2 Klein 9B** (`server/app_comfyui_klein.py`):
+- Same architecture as AIO variant but for the FLUX.2 Klein 9B fp8 workflow
+- Workflow template loaded from `server/comfyui_workflow/comfyui_flux1klein9b_api.json`
+- Image slot mapping: img1 → LoadImage node 252 (Base — provides output size via `GetImageSize` from `ImageScaleToTotalPixels` 291), img2 → LoadImage node 157 (Reference). img1 is used by both positive and negative branches (via `ConditioningZeroOut` + `ReferenceLatent`), img2 is chained into the positive branch as a second reference
+- Prompt set directly on `CLIPTextEncode` node 290 (`text` field); negative prompt uses `ConditioningZeroOut` (no text)
+- Sampler: `SamplerCustomAdvanced` + separate `RandomNoise` (286, `noise_seed`) + `BasicScheduler` (288, `steps=4` default) + `KSamplerSelect` (292, `euler`) + `CFGGuider` (273, `cfg=1.0` default). Seed range: `random.randint(0, 2**63 - 1)` to match template magnitude
+- LoRA: via `Power Lora Loader (rgthree)` custom node 303 — dynamic `lora_1`, `lora_2`, ... slots each `{on, lora, strength}`. When no active LoRAs, node 303 is removed from the workflow and `CFGGuider.model` is rewired directly to `UNETLoader` 283 (so rgthree is not required for LoRA-free runs)
+- Models: UNETLoader 283 (`flux-2-klein-9b-fp8.safetensors`), CLIPLoader 284 (`qwen_3_8b_fp8mixed.safetensors`, `type=flux2`), VAELoader 285 (`full_encoder_small_decoder.safetensors`)
+- Alignment: local `W_MULT=16`, `H_MULT=16`, max 2048×2048 (FLUX.2 prefers 16px multiples; ComfyUI's `ImageScaleToTotalPixels` with `resolution_steps=1` rescales again server-side)
+- Default steps: 4, default CFG: 1.0
+- Startup checks: ComfyUI connectivity (60s retry), required model availability (UNET/CLIP/VAE), Power Lora Loader (rgthree) node availability (warning only)
+- Shares `app_template.html` with all server variants
+
 **WaveSpeed AI API** (`server/app_wavespeed_qwen2.py`):
 - No local GPU/torch/diffusers dependency — delegates inference to WaveSpeed cloud API
 - API: `POST /api/v3/wavespeed-ai/qwen-image-2.0-pro/edit` (Qwen-Image-2.0-Pro model)
@@ -493,7 +520,7 @@ All scripts share this preprocessing flow:
 - Shares `app_template.html` with all server variants
 
 **Prompt Enhancement** (`server/lib/comfyui_enhance.py`):
-- Shared helper for all 3 ComfyUI servers and WaveSpeed server. `run_enhance(upload_fn, submit_fn, get_history_fn, workflow_template, prompt_text, image_bytes, image2_bytes)` runs the `enhance_prompt_api.json` workflow on ComfyUI
+- Shared helper for all 4 ComfyUI servers and WaveSpeed server. `run_enhance(upload_fn, submit_fn, get_history_fn, workflow_template, prompt_text, image_bytes, image2_bytes)` runs the `enhance_prompt_api.json` workflow on ComfyUI
 - Workflow uses `AILab_QwenVL_GGUF_Advanced` node (Huihui-Qwen3.5-4B-abliterated GGUF) → `PreviewAny` (text output)
 - Image handling: Img1 (node 12) and Img2 (node 59) are each uploaded to ComfyUI if provided; if not, a 256x256 white placeholder is uploaded to keep the workflow graph intact
 - Text extraction from ComfyUI history: tries `outputs["33"]["text"][0]` (PreviewAny), falls back to node 30 and other nodes
@@ -502,7 +529,7 @@ All scripts share this preprocessing flow:
 - Route `POST /api/enhance` registered conditionally via `enhance_fn` callback in `register_routes()`
 
 **Gallery Persistence** (`server/lib/gallery_db.py`):
-- Shared SQLite module used by all 7 web servers
+- Shared SQLite module used by all 8 web servers
 - `GalleryDB` class: thread-safe (new connection per operation), WAL mode
 - Tables: `gallery_jobs` (job_id, created, prompt, seed, t2i, input_count, user_hash, status, input_paths JSON, result_path, original_prompt, input_names JSON), `drawings` (drawing_id, user_hash, created, type, source, path, bg_path, overlay_path)
 - Room isolation: `get_room_db(db_dir, room_name)` → cached `GalleryDB` instances, room name hashed (SHA-256) to `room_{hash}.db`
@@ -613,7 +640,9 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | ComfyUI reboot fails | Install ComfyUI-Manager extension for API reboot support (`GET /manager/reboot`) |
 | ComfyUI no progress updates | Install `websocket-client`: `pip install websocket-client` |
 | ComfyUI nunchaku node missing | Install `NunchakuQwenImageLoraStackV3` custom node in ComfyUI (required by `app_comfyui_nunchaku.py`) |
-| ComfyUI GGUF node missing | Install `city96/ComfyUI-GGUF` custom node (`UnetLoaderGGUF`, `CLIPLoaderGGUF`) — required by all 3 ComfyUI servers (GGUF CLIP used by all variants) |
+| ComfyUI GGUF node missing | Install `city96/ComfyUI-GGUF` custom node (`UnetLoaderGGUF`, `CLIPLoaderGGUF`) — required by Qwen ComfyUI servers (AIO/Nunchaku/GGUF use GGUF CLIP). Klein variant does not require this |
+| ComfyUI Klein model not found | Download `flux-2-klein-9b-fp8.safetensors` to `models/diffusion_models/`, `qwen_3_8b_fp8mixed.safetensors` to `models/text_encoders/`, `full_encoder_small_decoder.safetensors` to `models/vae/` (URLs shown at startup) |
+| ComfyUI Klein LoRA not working | Install `rgthree-comfy` custom node for `Power Lora Loader (rgthree)`. Without active LoRAs the node is auto-removed, so rgthree is only required when using LoRA |
 | WaveSpeed API key missing | Set `WAVESPEED_API_KEY` environment variable before starting `app_wavespeed_qwen2.py` |
 | WaveSpeed API 401 | Invalid or expired API key; check key at wavespeed.ai/accesskey |
 | WaveSpeed API 429 | Rate limit exceeded; reduce request frequency |

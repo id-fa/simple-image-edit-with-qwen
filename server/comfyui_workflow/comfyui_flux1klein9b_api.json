@@ -1,0 +1,351 @@
+{
+  "157": {
+    "inputs": {
+      "image": "picture-2.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Ref画像(Positive)"
+    }
+  },
+  "252": {
+    "inputs": {
+      "image": "picture-1.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Base画像(negative)"
+    }
+  },
+  "271": {
+    "inputs": {
+      "filename_prefix": "ComfyUI_",
+      "images": [
+        "274",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "画像を保存"
+    }
+  },
+  "273": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "303",
+        0
+      ],
+      "positive": [
+        "287",
+        0
+      ],
+      "negative": [
+        "278",
+        0
+      ]
+    },
+    "class_type": "CFGGuider",
+    "_meta": {
+      "title": "CFGガイダー"
+    }
+  },
+  "274": {
+    "inputs": {
+      "samples": [
+        "275",
+        0
+      ],
+      "vae": [
+        "285",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAEデコード"
+    }
+  },
+  "275": {
+    "inputs": {
+      "noise": [
+        "286",
+        0
+      ],
+      "guider": [
+        "273",
+        0
+      ],
+      "sampler": [
+        "292",
+        0
+      ],
+      "sigmas": [
+        "288",
+        0
+      ],
+      "latent_image": [
+        "276",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "カスタムサンプラー（高度）"
+    }
+  },
+  "276": {
+    "inputs": {
+      "width": [
+        "293",
+        0
+      ],
+      "height": [
+        "293",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空の潜在画像"
+    }
+  },
+  "277": {
+    "inputs": {
+      "conditioning": [
+        "290",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件付けゼロアウト"
+    }
+  },
+  "278": {
+    "inputs": {
+      "conditioning": [
+        "277",
+        0
+      ],
+      "latent": [
+        "279",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参照潜在変数"
+    }
+  },
+  "279": {
+    "inputs": {
+      "pixels": [
+        "291",
+        0
+      ],
+      "vae": [
+        "285",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAEエンコード"
+    }
+  },
+  "281": {
+    "inputs": {
+      "pixels": [
+        "299",
+        0
+      ],
+      "vae": [
+        "285",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAEエンコード"
+    }
+  },
+  "283": {
+    "inputs": {
+      "unet_name": "flux-2-klein-9b-fp8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "拡散モデルを読み込む"
+    }
+  },
+  "284": {
+    "inputs": {
+      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "CLIPを読み込む"
+    }
+  },
+  "285": {
+    "inputs": {
+      "vae_name": "full_encoder_small_decoder.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAEを読み込む"
+    }
+  },
+  "286": {
+    "inputs": {
+      "noise_seed": 645374234705162
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "ランダムノイズ"
+    }
+  },
+  "287": {
+    "inputs": {
+      "conditioning": [
+        "289",
+        0
+      ],
+      "latent": [
+        "281",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参照潜在変数"
+    }
+  },
+  "288": {
+    "inputs": {
+      "scheduler": "simple",
+      "steps": 4,
+      "denoise": 1,
+      "model": [
+        "283",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "基本スケジューラー"
+    }
+  },
+  "289": {
+    "inputs": {
+      "conditioning": [
+        "290",
+        0
+      ],
+      "latent": [
+        "279",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参照潜在変数"
+    }
+  },
+  "290": {
+    "inputs": {
+      "text": "replace the head, face and hair.\n",
+      "clip": [
+        "284",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "291": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 2,
+      "resolution_steps": 1,
+      "image": [
+        "252",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "画像を総ピクセルにスケール"
+    }
+  },
+  "292": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "Kサンプラー選択"
+    }
+  },
+  "293": {
+    "inputs": {
+      "image": [
+        "291",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "画像サイズ取得"
+    }
+  },
+  "299": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 2,
+      "resolution_steps": 1,
+      "image": [
+        "157",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "画像を総ピクセルにスケール"
+    }
+  },
+  "303": {
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "lora_1": {
+        "on": true,
+        "lora": "FKlein9B\\lora.safetensors",
+        "strength": 1
+      },
+      "lora_2": {
+        "on": true,
+        "lora": "FKlein9B\\lora2.safetensors",
+        "strength": 1
+      },
+      "➕ Add Lora": "",
+      "model": [
+        "283",
+        0
+      ]
+    },
+    "class_type": "Power Lora Loader (rgthree)",
+    "_meta": {
+      "title": "Power Lora Loader (rgthree)"
+    }
+  }
+}

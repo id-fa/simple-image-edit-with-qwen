@@ -1,0 +1,844 @@
+#!/usr/bin/env python3
+"""
+Web server for FLUX.2 Klein 9B fp8 using ComfyUI API backend.
+Delegates inference to a running ComfyUI instance via the HTTP/WebSocket API.
+No torch/diffusers dependency — requires only flask, requests, pillow, websocket-client.
+
+Workflow: img1 is treated as the Base image (the scene to edit — provides
+output size via GetImageSize), img2 is the Reference image (style/feature
+source). Both ReferenceLatent branches follow the template graph.
+
+Usage:
+  python app_comfyui_klein.py
+  python app_comfyui_klein.py --password mysecret --port 5000
+  python app_comfyui_klein.py --comfyui-url http://192.168.1.100:8188
+  python app_comfyui_klein.py --comfyui-path D:\\ComfyUI   # auto-register LoRA path
+  python app_comfyui_klein.py --gallery --password mysecret
+  python app_comfyui_klein.py --steps 4 --cfg 1.0
+
+Requirements:
+  pip install flask requests pillow websocket-client googletrans==4.0.0rc1
+
+Model files (place under ComfyUI's models/):
+  diffusion_models/flux-2-klein-9b-fp8.safetensors
+    https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8/resolve/main/flux-2-klein-9b-fp8.safetensors
+  text_encoders/qwen_3_8b_fp8mixed.safetensors
+    https://huggingface.co/Comfy-Org/flux2-klein-9B/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors
+  vae/full_encoder_small_decoder.safetensors
+    https://huggingface.co/black-forest-labs/FLUX.2-small-decoder/resolve/main/full_encoder_small_decoder.safetensors
+"""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import gc
+import io
+import json
+import math
+import random
+import sys
+import time
+import uuid
+from pathlib import Path
+
+import requests as http_requests
+from PIL import Image
+
+import lib.server_common as common
+from lib.server_routes import register_routes
+
+try:
+    import websocket as ws_lib
+    HAS_WEBSOCKET = True
+except ImportError:
+    HAS_WEBSOCKET = False
+    print("[warn] websocket-client not installed. Progress tracking will use polling.", file=sys.stderr)
+    print("[info] Install with: pip install websocket-client", file=sys.stderr)
+
+
+# =======================
+# Fixed parameters
+# =======================
+PROMPT_DEFAULT = (
+    "Edit the base image referring to the reference image. "
+    "Preserve the base image's composition, pose, and lighting."
+)
+
+DEFAULT_STEPS = 4
+DEFAULT_CFG = 1.0
+
+MAX_W = 2048
+MAX_H = 2048
+W_MULT = 16
+H_MULT = 16
+
+T2I_SIZE = (1024, 1024)
+
+LORA_DIR = Path(__file__).parent / "LoRA"
+
+# =======================
+# Enhance prompt workflow (optional)
+# =======================
+_ENHANCE_WF_PATH = Path(__file__).parent / "comfyui_workflow" / "enhance_prompt_api.json"
+try:
+    with open(_ENHANCE_WF_PATH, encoding="utf-8") as _f:
+        ENHANCE_WF_TEMPLATE = json.load(_f)
+    HAS_ENHANCE = True
+    print(f"[info] enhance workflow loaded: {_ENHANCE_WF_PATH}", file=sys.stderr)
+except FileNotFoundError:
+    ENHANCE_WF_TEMPLATE = {}
+    HAS_ENHANCE = False
+
+# =======================
+# Workflow template (loaded from file)
+# =======================
+_WORKFLOW_PATH = Path(__file__).parent / "comfyui_workflow" / "comfyui_flux1klein9b_api.json"
+try:
+    with open(_WORKFLOW_PATH, encoding="utf-8") as _f:
+        WORKFLOW_TEMPLATE = json.load(_f)
+    print(f"[info] workflow template loaded: {_WORKFLOW_PATH}", file=sys.stderr)
+except FileNotFoundError:
+    print(f"[error] workflow template not found: {_WORKFLOW_PATH}", file=sys.stderr)
+    print(f"[error] place workflow JSON at {_WORKFLOW_PATH}", file=sys.stderr)
+    WORKFLOW_TEMPLATE = {}
+
+# ----------------------------------------------------------
+# Workflow node ID mapping (flux1klein9b_api.json)
+# img1 (user's primary upload) -> 252 Base (drives output size)
+# img2 (user's reference)      -> 157 Ref
+# ----------------------------------------------------------
+WF_NODE = {
+    "load_image1":      "252",   # LoadImage - Base (img1, negative ref)
+    "load_image2":      "157",   # LoadImage - Ref  (img2, positive ref)
+    "image_scale1":     "291",   # ImageScaleToTotalPixels - img1 (Base)
+    "image_scale2":     "299",   # ImageScaleToTotalPixels - img2 (Ref)
+    "prompt_text":      "290",   # CLIPTextEncode (positive prompt)
+    "unet_loader":      "283",   # UNETLoader
+    "clip_loader":      "284",   # CLIPLoader
+    "vae_loader":       "285",   # VAELoader
+    "noise":            "286",   # RandomNoise (seed)
+    "scheduler":        "288",   # BasicScheduler (steps)
+    "guider":           "273",   # CFGGuider (cfg, model input via LoRA chain)
+    "lora_loader":      "303",   # Power Lora Loader (rgthree)
+    "save_image":       "271",   # SaveImage
+}
+
+MAX_LORA_SLOTS = 8
+
+
+# =======================
+# ComfyUI-specific state
+# =======================
+comfyui_url = "http://127.0.0.1:8188"
+comfyui_client_id = uuid.uuid4().hex
+configured_steps = DEFAULT_STEPS
+configured_cfg = DEFAULT_CFG
+
+
+# =======================
+# ComfyUI API helpers
+# =======================
+def comfyui_upload_image(image_bytes: bytes, filename: str) -> str:
+    resp = http_requests.post(
+        f"{comfyui_url}/upload/image",
+        files={"image": (filename, io.BytesIO(image_bytes), "image/png")},
+        data={"overwrite": "true"},
+    )
+    resp.raise_for_status()
+    return resp.json().get("name", filename)
+
+
+def comfyui_submit_prompt(workflow: dict) -> str:
+    payload = {"prompt": workflow, "client_id": comfyui_client_id}
+    resp = http_requests.post(f"{comfyui_url}/prompt", json=payload)
+    if resp.status_code != 200:
+        try:
+            err_detail = resp.json()
+        except Exception:
+            err_detail = resp.text[:2000]
+        print(f"[error] ComfyUI /prompt returned {resp.status_code}: {json.dumps(err_detail, indent=2, ensure_ascii=False)}", file=sys.stderr)
+        resp.raise_for_status()
+    result = resp.json()
+
+    if "error" in result:
+        detail = result.get("node_errors", result["error"])
+        raise RuntimeError(f"ComfyUI error: {detail}")
+    node_errors = result.get("node_errors")
+    if node_errors:
+        raise RuntimeError(f"ComfyUI node errors: {json.dumps(node_errors, ensure_ascii=False)}")
+
+    return result["prompt_id"]
+
+
+def comfyui_interrupt():
+    try:
+        http_requests.post(f"{comfyui_url}/interrupt")
+    except Exception as ex:
+        print(f"[warn] ComfyUI interrupt failed: {ex}", file=sys.stderr)
+
+
+def comfyui_get_history(prompt_id: str) -> dict:
+    resp = http_requests.get(f"{comfyui_url}/history/{prompt_id}")
+    resp.raise_for_status()
+    return resp.json()
+
+
+def comfyui_get_image(filename: str, subfolder: str = "", img_type: str = "output") -> bytes:
+    resp = http_requests.get(
+        f"{comfyui_url}/view",
+        params={"filename": filename, "subfolder": subfolder, "type": img_type},
+    )
+    resp.raise_for_status()
+    return resp.content
+
+
+def comfyui_get_available_models() -> dict:
+    info: dict[str, list] = {}
+    for node_class, key, field in [
+        ("UNETLoader", "unet_models", "unet_name"),
+        ("CLIPLoader", "clip_models", "clip_name"),
+        ("VAELoader", "vae_models", "vae_name"),
+        ("LoraLoaderModelOnly", "lora_models", "lora_name"),
+    ]:
+        try:
+            resp = http_requests.get(f"{comfyui_url}/object_info/{node_class}", timeout=10)
+            data = resp.json()
+            models = data[node_class]["input"]["required"][field][0]
+            if key in info:
+                seen = set(info[key])
+                info[key].extend(m for m in models if m not in seen)
+            else:
+                info[key] = models
+        except Exception:
+            if key not in info:
+                info[key] = []
+    return info
+
+
+def comfyui_wait_for_result(prompt_id: str, job_id: str, timeout: float = 600) -> dict | None:
+    if HAS_WEBSOCKET:
+        return _wait_ws(prompt_id, job_id, timeout)
+    return _wait_poll(prompt_id, job_id, timeout)
+
+
+def _wait_ws(prompt_id: str, job_id: str, timeout: float) -> dict | None:
+    ws_url = comfyui_url.replace("http://", "ws://").replace("https://", "wss://")
+    ws_url = f"{ws_url}/ws?clientId={comfyui_client_id}"
+
+    ws = ws_lib.WebSocket()
+    ws.settimeout(5.0)
+    try:
+        ws.connect(ws_url)
+    except Exception as ex:
+        print(f"[warn] WS connect failed, falling back to polling: {ex}", file=sys.stderr)
+        try:
+            ws.close()
+        except Exception:
+            pass
+        return _wait_poll(prompt_id, job_id, timeout)
+
+    done = False
+    error_msg = None
+    start = time.time()
+    ws_error_count = 0
+    WS_ERROR_LIMIT = 10
+
+    try:
+        while time.time() - start < timeout:
+            if job_id in common.cancel_requests:
+                comfyui_interrupt()
+                return None
+
+            try:
+                raw = ws.recv()
+                ws_error_count = 0
+                if not raw:
+                    continue
+                if isinstance(raw, bytes):
+                    if len(raw) > 8:
+                        preview_data = raw[8:]
+                        with common.job_lock:
+                            if job_id in common.jobs:
+                                common.jobs[job_id]["preview"] = preview_data
+                    continue
+                data = json.loads(raw)
+                msg_type = data.get("type", "")
+                msg_data = data.get("data", {})
+
+                if msg_data.get("prompt_id") != prompt_id:
+                    continue
+
+                if msg_type == "progress":
+                    step = msg_data.get("value", 0)
+                    total = msg_data.get("max", configured_steps)
+                    with common.job_lock:
+                        if job_id in common.jobs:
+                            common.jobs[job_id]["current_step"] = step
+                            common.jobs[job_id]["total_steps"] = total
+
+                elif msg_type == "executing":
+                    if msg_data.get("node") is None:
+                        done = True
+                        break
+
+                elif msg_type == "execution_error":
+                    error_msg = msg_data.get("exception_message", "ComfyUI execution error")
+                    break
+
+            except ws_lib.WebSocketTimeoutException:
+                continue
+            except Exception as ex:
+                ws_error_count += 1
+                print(f"[warn] WS recv error ({ws_error_count}/{WS_ERROR_LIMIT}): {ex}", file=sys.stderr)
+                if ws_error_count >= WS_ERROR_LIMIT:
+                    raise RuntimeError("ComfyUI との接続が切断されました / ComfyUI connection lost")
+                time.sleep(1)
+    finally:
+        try:
+            ws.close()
+        except Exception:
+            pass
+
+    if error_msg:
+        raise RuntimeError(error_msg)
+    if not done:
+        return None
+
+    history = comfyui_get_history(prompt_id)
+    return history.get(prompt_id, {}).get("outputs", {})
+
+
+def _wait_poll(prompt_id: str, job_id: str, timeout: float) -> dict | None:
+    start = time.time()
+    while time.time() - start < timeout:
+        if job_id in common.cancel_requests:
+            comfyui_interrupt()
+            return None
+        try:
+            history = comfyui_get_history(prompt_id)
+            if prompt_id in history:
+                outputs = history[prompt_id].get("outputs", {})
+                if outputs:
+                    return outputs
+        except Exception:
+            pass
+        time.sleep(2)
+    return None
+
+
+# =======================
+# Image processing helpers
+# =======================
+def round_up(x: int, m: int) -> int:
+    return ((x + m - 1) // m) * m
+
+
+def pre_resize_to_total_pixels(img: Image.Image, target_pixels: int) -> Image.Image:
+    w, h = img.size
+    if w * h <= target_pixels:
+        return img
+    scale = math.sqrt(target_pixels / (w * h))
+    nw, nh = max(1, int(w * scale)), max(1, int(h * scale))
+    print(f"[info] pre-resize: {w}x{h} -> {nw}x{nh}", file=sys.stderr)
+    return img.resize((nw, nh))
+
+
+def fit_and_align(img: Image.Image, max_w: int, max_h: int, w_mult: int, h_mult: int) -> Image.Image:
+    w, h = img.size
+    if w > max_w or h > max_h:
+        scale = min(max_w / w, max_h / h)
+        w, h = int(w * scale), int(h * scale)
+        img = img.resize((w, h))
+    aw, ah = round_up(w, w_mult), round_up(h, h_mult)
+    if aw > max_w or ah > max_h:
+        scale = min(max_w / aw, max_h / ah)
+        w, h = int(w * scale), int(h * scale)
+        img = img.resize((w, h))
+        aw, ah = round_up(w, w_mult), round_up(h, h_mult)
+    if w != aw or h != ah:
+        bg = img.getpixel((w - 1, h - 1))
+        canvas = Image.new("RGB", (aw, ah), bg)
+        canvas.paste(img, (0, 0))
+        return canvas
+    return img
+
+
+def preprocess_image(img: Image.Image, pre_resize_target: int | None) -> Image.Image:
+    if pre_resize_target:
+        img = pre_resize_to_total_pixels(img, pre_resize_target)
+    return fit_and_align(img, MAX_W, MAX_H, W_MULT, H_MULT)
+
+
+# =======================
+# extra_model_paths.yaml auto-registration
+# =======================
+YAML_SECTION_NAME = "simple_image_edit"
+YAML_COMMENT = "# Auto-added by app_comfyui_klein.py — LoRA path for simple-image-edit server"
+
+
+def ensure_lora_path_in_comfyui(comfyui_path: Path) -> bool:
+    if not LORA_DIR.is_dir():
+        return False
+
+    yaml_path = comfyui_path / "extra_model_paths.yaml"
+    lora_abs = str(LORA_DIR.resolve()).replace("\\", "/")
+
+    existing_content = ""
+    if yaml_path.exists():
+        existing_content = yaml_path.read_text(encoding="utf-8")
+        normalized = existing_content.replace("\\", "/")
+        if lora_abs in normalized:
+            print(f"[info] LoRA path already in {yaml_path}", file=sys.stderr)
+            return False
+
+    new_section = f"\n{YAML_COMMENT}\n{YAML_SECTION_NAME}:\n    loras: {lora_abs}/\n"
+
+    if existing_content.strip():
+        backup_path = yaml_path.with_suffix(".yaml.bak")
+        backup_path.write_text(existing_content, encoding="utf-8")
+        print(f"[info] backed up {yaml_path} -> {backup_path}", file=sys.stderr)
+
+    with open(yaml_path, "a", encoding="utf-8") as f:
+        f.write(new_section)
+
+    print(f"[info] registered LoRA path in {yaml_path}:", file=sys.stderr)
+    print(f"[info]   {YAML_SECTION_NAME}.loras: {lora_abs}/", file=sys.stderr)
+    return True
+
+
+def reboot_comfyui_and_wait(timeout: float = 120) -> bool:
+    print("[info] ComfyUIを再起動しています... / Rebooting ComfyUI...", file=sys.stderr)
+    try:
+        http_requests.get(f"{comfyui_url}/manager/reboot", timeout=5)
+    except Exception:
+        pass
+
+    start = time.time()
+    while time.time() - start < timeout:
+        time.sleep(2)
+        try:
+            resp = http_requests.get(f"{comfyui_url}/system_stats", timeout=3)
+            if resp.status_code == 200:
+                elapsed = time.time() - start
+                print(f"[info] ComfyUI restarted ({elapsed:.0f}s)", file=sys.stderr)
+                return True
+        except Exception:
+            pass
+
+    print("[error] ComfyUI restart timeout", file=sys.stderr)
+    return False
+
+
+# =======================
+# LoRA scanning
+# =======================
+def scan_lora_folder(comfyui_lora_names: list[str]) -> list[dict]:
+    if not LORA_DIR.is_dir():
+        print(f"[info] LoRA directory not found: {LORA_DIR}", file=sys.stderr)
+        return []
+
+    registry = []
+    for f in sorted(LORA_DIR.iterdir()):
+        if f.suffix.lower() not in (".safetensors", ".ckpt", ".pt"):
+            continue
+
+        comfyui_name = None
+        for cn in comfyui_lora_names:
+            cn_base = cn.replace("\\", "/").split("/")[-1]
+            if cn_base == f.name or cn == f.name:
+                comfyui_name = cn
+                break
+
+        if comfyui_name:
+            registry.append({
+                "name": f.stem,
+                "comfyui_name": comfyui_name,
+                "local_path": str(f),
+                "default_scale": 1.0,
+            })
+            print(f"[info] LoRA found: {f.stem} -> {comfyui_name}", file=sys.stderr)
+        else:
+            print(f"[warn] LoRA not recognized by ComfyUI: {f.name}", file=sys.stderr)
+            print(f"[warn]   -> Add LoRA directory to ComfyUI extra_model_paths.yaml", file=sys.stderr)
+
+    return registry
+
+
+# =======================
+# Workflow builder
+# =======================
+def build_workflow(image1_name: str, image2_name: str | None, prompt: str,
+                   seed: int | None, loras: list[dict] | None = None,
+                   pre_resize: int | None = None) -> dict:
+    """Build ComfyUI workflow from the klein9b template.
+
+    Args:
+        image1_name: ComfyUI filename for Base image (drives output size)
+        image2_name: ComfyUI filename for Reference image (optional; reuses img1 if None)
+        loras:       [{"comfyui_name": str, "scale": float}] (max MAX_LORA_SLOTS)
+        pre_resize:  target total pixels for ImageScaleToTotalPixels
+    """
+    N = WF_NODE
+    wf = copy.deepcopy(WORKFLOW_TEMPLATE)
+
+    # Input images (img1 = Base -> 252, img2 = Ref -> 157)
+    wf[N["load_image1"]]["inputs"]["image"] = image1_name
+    wf[N["load_image2"]]["inputs"]["image"] = image2_name or image1_name
+
+    # Image scale (megapixels) for pre-resize — applied to both img1 and img2
+    megapixels = (pre_resize / 1_000_000) if pre_resize else 1.0
+    wf[N["image_scale1"]]["inputs"]["megapixels"] = megapixels
+    wf[N["image_scale2"]]["inputs"]["megapixels"] = megapixels
+
+    # Prompt (positive only; negative uses ConditioningZeroOut in template)
+    wf[N["prompt_text"]]["inputs"]["text"] = prompt
+
+    # Seed, steps, cfg
+    wf[N["noise"]]["inputs"]["noise_seed"] = seed if seed is not None else random.randint(0, 2**63 - 1)
+    wf[N["scheduler"]]["inputs"]["steps"] = configured_steps
+    wf[N["guider"]]["inputs"]["cfg"] = configured_cfg
+
+    # LoRA handling — Power Lora Loader (rgthree)
+    active_loras = [l for l in (loras or []) if abs(l.get("scale", 1.0)) > 1e-5][:MAX_LORA_SLOTS]
+
+    lora_node = wf.get(N["lora_loader"])
+    if lora_node is None:
+        pass
+    elif not active_loras:
+        # No LoRAs: drop the Power Lora Loader and rewire guider.model -> unet_loader
+        del wf[N["lora_loader"]]
+        wf[N["guider"]]["inputs"]["model"] = [N["unet_loader"], 0]
+    else:
+        # Clear any preset lora_N slots from template, then populate with active ones
+        for key in list(lora_node["inputs"].keys()):
+            if key.startswith("lora_"):
+                del lora_node["inputs"][key]
+        for i, lora in enumerate(active_loras, 1):
+            lora_node["inputs"][f"lora_{i}"] = {
+                "on": True,
+                "lora": lora["comfyui_name"],
+                "strength": lora["scale"],
+            }
+        # Ensure guider.model points at the LoRA loader
+        wf[N["guider"]]["inputs"]["model"] = [N["lora_loader"], 0]
+
+    return wf
+
+
+# =======================
+# Job worker
+# =======================
+def worker_loop():
+    while True:
+        job_id = None
+        with common.job_lock:
+            while common.processing_queue:
+                candidate = common.processing_queue[0]
+                if candidate in common.cancel_requests:
+                    common.processing_queue.popleft()
+                    common.cancel_requests.discard(candidate)
+                    common.jobs[candidate]["status"] = "cancelled"
+                    continue
+                break
+
+            if common.processing_queue:
+                job_id = common.processing_queue[0]
+                common.current_processing = job_id
+                common.jobs[job_id]["status"] = "processing"
+                common.jobs[job_id]["current_step"] = 0
+
+        if job_id is None:
+            time.sleep(0.5)
+            continue
+
+        try:
+            job = common.jobs[job_id]
+            image_names: list[str] = []
+
+            if job["t2i"]:
+                tw, th = T2I_SIZE
+                tw, th = round_up(tw, W_MULT), round_up(th, H_MULT)
+                img = Image.new("RGB", (tw, th), (255, 255, 255))
+                buf = io.BytesIO()
+                try:
+                    img.save(buf, format="PNG")
+                    fname = comfyui_upload_image(buf.getvalue(), f"{job_id}_t2i.png")
+                    image_names.append(fname)
+                finally:
+                    buf.close()
+                    img.close()
+            else:
+                for i, img_path in enumerate(job["input_paths"]):
+                    img = Image.open(img_path).convert("RGB")
+                    img = preprocess_image(img, job["pre_resize"])
+                    buf = io.BytesIO()
+                    try:
+                        img.save(buf, format="PNG")
+                        fname = comfyui_upload_image(buf.getvalue(), f"{job_id}_in{i}.png")
+                        image_names.append(fname)
+                    finally:
+                        buf.close()
+                        img.close()
+
+            # Resolve LoRA selection
+            lora_selection = []
+            for sel in job.get("loras", []):
+                matched = [l for l in common.lora_registry if l["name"] == sel["name"]]
+                if matched:
+                    lora_selection.append({
+                        "comfyui_name": matched[0]["comfyui_name"],
+                        "scale": sel.get("scale", 1.0),
+                    })
+
+            wf = build_workflow(
+                image1_name=image_names[0],
+                image2_name=image_names[1] if len(image_names) > 1 else None,
+                prompt=job["prompt"],
+                seed=job["seed"],
+                loras=lora_selection,
+                pre_resize=job.get("pre_resize"),
+            )
+            prompt_id = comfyui_submit_prompt(wf)
+
+            outputs = comfyui_wait_for_result(prompt_id, job_id)
+
+            if job_id in common.cancel_requests:
+                with common.job_lock:
+                    common.cancel_requests.discard(job_id)
+                    common.jobs[job_id]["status"] = "cancelled"
+            elif outputs is None:
+                with common.job_lock:
+                    if common.jobs[job_id]["status"] != "cancelled":
+                        common.jobs[job_id]["status"] = "error"
+                        common.jobs[job_id]["error"] = "ComfyUI timeout または出力なし / ComfyUI timeout or no output"
+            else:
+                save_output = outputs.get(WF_NODE["save_image"], {})
+                images = save_output.get("images", [])
+                if not images:
+                    raise RuntimeError("ComfyUIから出力画像がありません / No output images from ComfyUI")
+
+                img_info = images[0]
+                img_bytes = comfyui_get_image(
+                    img_info["filename"],
+                    img_info.get("subfolder", ""),
+                    img_info.get("type", "output"),
+                )
+                out_path = common.TMP_DIR / f"{job_id}_out.png"
+                with open(out_path, "wb") as f:
+                    f.write(img_bytes)
+
+                with common.job_lock:
+                    common.jobs[job_id]["status"] = "done"
+                    common.jobs[job_id]["result_path"] = str(out_path)
+
+                common.persist_job_to_db(job_id, job, str(out_path))
+
+        except Exception as ex:
+            import traceback
+            traceback.print_exc()
+            with common.job_lock:
+                common.cancel_requests.discard(job_id)
+                if common.jobs[job_id]["status"] != "cancelled":
+                    common.jobs[job_id]["status"] = "error"
+                    common.jobs[job_id]["error"] = str(ex)
+        finally:
+            with common.job_lock:
+                if common.processing_queue and common.processing_queue[0] == job_id:
+                    common.processing_queue.popleft()
+                common.current_processing = None
+                if job_id in common.jobs:
+                    common.jobs[job_id].pop("preview", None)
+            gc.collect()
+
+
+# =======================
+# Register shared routes & load template
+# =======================
+HTML_TEMPLATE = common.load_html_template()
+
+if HAS_ENHANCE:
+    from lib.comfyui_enhance import run_enhance
+    def _enhance_prompt(prompt_text, image_bytes, image2_bytes=None):
+        return run_enhance(
+            comfyui_upload_image, comfyui_submit_prompt, comfyui_get_history,
+            ENHANCE_WF_TEMPLATE, prompt_text, image_bytes, image2_bytes,
+        )
+
+register_routes(
+    server_title="ComfyUI-Klein",
+    pre_resize_options=[{"value": "1m", "label": "1M pixels"}, {"value": "2m", "label": "2M pixels"}],
+    pre_resize_map={"1m": 1_000_000, "2m": 2_000_000},
+    default_pre_resize="1m",
+    has_preview=True,
+    has_enhance=HAS_ENHANCE,
+    enhance_fn=_enhance_prompt if HAS_ENHANCE else None,
+    get_total_steps=lambda: configured_steps,
+    prompt_default=PROMPT_DEFAULT,
+    html_template=HTML_TEMPLATE,
+)
+
+
+# =======================
+# Entry point
+# =======================
+def main():
+    global comfyui_url, configured_steps, configured_cfg
+
+    ap = argparse.ArgumentParser(description="FLUX.2 Klein 9B Web Server (ComfyUI API backend)")
+    common.add_common_args(ap)
+    ap.add_argument("--comfyui-url", default="http://127.0.0.1:8188",
+                    help="ComfyUI API URL (default: http://127.0.0.1:8188)")
+    ap.add_argument("--comfyui-path", default=None, metavar="DIR",
+                    help="ComfyUI installation directory. "
+                         "Auto-registers server/LoRA/ in extra_model_paths.yaml")
+    ap.add_argument("--steps", type=int, default=DEFAULT_STEPS,
+                    help=f"Inference steps (default: {DEFAULT_STEPS})")
+    ap.add_argument("--cfg", type=float, default=DEFAULT_CFG,
+                    help=f"CFG scale (default: {DEFAULT_CFG})")
+    ap.add_argument("--enhance-model", default=None, metavar="NAME",
+                    help="GGUF model name for enhance prompt (overrides workflow default)")
+    args = ap.parse_args()
+
+    common.apply_common_args(args)
+    comfyui_url = args.comfyui_url.rstrip("/")
+    configured_steps = args.steps
+    configured_cfg = args.cfg
+
+    if args.enhance_model and HAS_ENHANCE:
+        ENHANCE_WF_TEMPLATE["58"]["inputs"]["model_name"] = args.enhance_model
+        print(f"[info] enhance model: {args.enhance_model}", file=sys.stderr)
+
+    # Check ComfyUI connectivity (retry once after 60s)
+    print(f"[info] connecting to ComfyUI: {comfyui_url}", file=sys.stderr)
+    comfyui_connected = False
+    for attempt in range(2):
+        try:
+            resp = http_requests.get(f"{comfyui_url}/system_stats", timeout=10)
+            resp.raise_for_status()
+            print("[info] ComfyUI connection OK", file=sys.stderr)
+            comfyui_connected = True
+            break
+        except Exception as ex:
+            if attempt == 0:
+                print(f"[warn] Cannot connect to ComfyUI: {ex}", file=sys.stderr)
+                print("[info] Retrying in 60 seconds...", file=sys.stderr)
+                time.sleep(60)
+            else:
+                print(f"[error] Cannot connect to ComfyUI at {comfyui_url}: {ex}", file=sys.stderr)
+                print("[error] Make sure ComfyUI is running.", file=sys.stderr)
+    if not comfyui_connected:
+        sys.exit(1)
+
+    # Check required models (UNET + CLIP + VAE)
+    print("[info] checking available models...", file=sys.stderr)
+    available = comfyui_get_available_models()
+
+    unet_name = WORKFLOW_TEMPLATE.get(WF_NODE["unet_loader"], {}).get("inputs", {}).get("unet_name", "")
+    clip_name = WORKFLOW_TEMPLATE.get(WF_NODE["clip_loader"], {}).get("inputs", {}).get("clip_name", "")
+    vae_name = WORKFLOW_TEMPLATE.get(WF_NODE["vae_loader"], {}).get("inputs", {}).get("vae_name", "")
+
+    model_download_urls = {
+        "unet_models": [
+            "https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8/resolve/main/flux-2-klein-9b-fp8.safetensors",
+        ],
+        "clip_models": [
+            "https://huggingface.co/Comfy-Org/flux2-klein-9B/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors",
+        ],
+        "vae_models": [
+            "https://huggingface.co/black-forest-labs/FLUX.2-small-decoder/resolve/main/full_encoder_small_decoder.safetensors",
+        ],
+    }
+
+    missing = []
+    if unet_name and unet_name not in available.get("unet_models", []):
+        missing.append(("UNET", unet_name, "unet_models"))
+    if clip_name and clip_name not in available.get("clip_models", []):
+        missing.append(("CLIP", clip_name, "clip_models"))
+    if vae_name and vae_name not in available.get("vae_models", []):
+        missing.append(("VAE", vae_name, "vae_models"))
+
+    if missing:
+        print("[error] Required models not found in ComfyUI:", file=sys.stderr)
+        for label, name, model_type in missing:
+            print(f"  - {label}: {name}", file=sys.stderr)
+            urls = model_download_urls.get(model_type, [])
+            for url in urls:
+                print(f"    Download: {url}", file=sys.stderr)
+        print("[error] Place model files in ComfyUI's models directory.", file=sys.stderr)
+        sys.exit(1)
+    else:
+        print(f"[info] UNET: {unet_name} ✓", file=sys.stderr)
+        print(f"[info] CLIP: {clip_name} ✓", file=sys.stderr)
+        print(f"[info] VAE:  {vae_name} ✓", file=sys.stderr)
+
+    # Verify Power Lora Loader (rgthree) availability — only needed when LoRAs are active
+    try:
+        resp = http_requests.get(f"{comfyui_url}/object_info/Power Lora Loader (rgthree)", timeout=10)
+        if resp.status_code == 200:
+            print("[info] Power Lora Loader (rgthree) node ✓", file=sys.stderr)
+        else:
+            print("[warn] Power Lora Loader (rgthree) node not found. Install rgthree-comfy for LoRA support.", file=sys.stderr)
+    except Exception:
+        print("[warn] Could not verify Power Lora Loader (rgthree) node availability.", file=sys.stderr)
+
+    # Auto-register LoRA path in ComfyUI's extra_model_paths.yaml
+    yaml_modified = False
+    if args.comfyui_path:
+        comfyui_dir = Path(args.comfyui_path)
+        if not comfyui_dir.is_dir():
+            print(f"[error] ComfyUI directory not found: {comfyui_dir}", file=sys.stderr)
+            sys.exit(1)
+        yaml_modified = ensure_lora_path_in_comfyui(comfyui_dir)
+
+    if yaml_modified:
+        if reboot_comfyui_and_wait():
+            available = comfyui_get_available_models()
+        else:
+            print("[warn] ComfyUI reboot failed. LoRAs may not be fully available.", file=sys.stderr)
+            print("[warn] Restart ComfyUI manually and re-run this server.", file=sys.stderr)
+
+    # Scan LoRA folder (only when --comfyui-path registers the path in ComfyUI)
+    if args.comfyui_path:
+        common.lora_registry.extend(scan_lora_folder(available.get("lora_models", [])))
+
+    # If --comfyui-path not specified, also register all ComfyUI-known LoRAs
+    if not args.comfyui_path:
+        known = {e["comfyui_name"] for e in common.lora_registry}
+        for cn in available.get("lora_models", []):
+            if cn not in known:
+                parts = cn.replace("\\", "/").rsplit("/", 1)
+                name = parts[-1].rsplit(".", 1)[0]
+                folder = parts[0] if len(parts) > 1 else ""
+                common.lora_registry.append({
+                    "name": name,
+                    "comfyui_name": cn,
+                    "local_path": None,
+                    "default_scale": 1.0,
+                    "folder": folder,
+                })
+        if common.lora_registry:
+            print(f"[info] {len(common.lora_registry)} LoRA(s) from ComfyUI API", file=sys.stderr)
+
+    if common.lora_registry:
+        print(f"[info] {len(common.lora_registry)} LoRA(s) available", file=sys.stderr)
+
+    # Build model info for UI
+    common.model_info["pipeline"] = f"ComfyUI Klein ({comfyui_url})"
+    common.model_info["transformer"] = unet_name
+    common.model_info["text_encoder_class"] = clip_name
+    common.model_info["vae_class"] = vae_name
+    common.model_info["steps"] = f"{configured_steps} (CFG: {configured_cfg})"
+    if common.lora_registry and args.comfyui_path:
+        common.model_info["loras"] = ", ".join(e["name"] for e in common.lora_registry)
+
+    common.start_server_threads(worker_loop)
+
+    print(f"[info] server starting at http://{args.host}:{args.port}", file=sys.stderr)
+    print(f"[info] password: {args.password}", file=sys.stderr)
+
+    common.app.run(host=args.host, port=args.port, threaded=True)
+
+
+if __name__ == "__main__":
+    main()

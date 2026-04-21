@@ -1,0 +1,16 @@
+chcp 65001 >nul
+
+rem Connects to a running ComfyUI instance.
+rem To use local LoRA folder, add: --comfyui-path "C:\path\to\ComfyUI"
+rem Without --comfyui-path, LoRAs are discovered from ComfyUI automatically.
+
+python app_comfyui_klein.py --host 0.0.0.0 --port 18188 --password password --steps 4 --gallery^
+ --comfyui-url "http://127.0.0.1:8188"^
+ --preset "画像2の服を着せる::将图像 1 中的角色穿上图像 2 中的服装。无视物理定律，穿一模一样的服装。不要添加额外的绳子或布料。"^
+ --preset "画像2のポーズにする::The character in image 1 is in the pose of image 2"^
+ --preset "高画質化::Enhance quality."^
+ --preset "テキスト除去::Remove all text."^
+ --preset "顔交換::replace the head, face and hair."^
+ --preset "LoRA_REAL::transform the image into high quality realistic photograph. [female|male]"
+
+pause
