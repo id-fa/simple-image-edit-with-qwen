@@ -1,8 +1,8 @@
 {
   "id": "9bfe47fd-b6b2-4818-be89-2ffeacf54fac",
   "revision": 0,
-  "last_node_id": 304,
-  "last_link_id": 929,
+  "last_node_id": 305,
+  "last_link_id": 931,
   "nodes": [
     {
       "id": 299,
@@ -351,67 +351,6 @@
       "widgets_values": [
         "simple",
         4,
-        1
-      ]
-    },
-    {
-      "id": 273,
-      "type": "CFGGuider",
-      "pos": [
-        1197.9827231053032,
-        234.64744769528795
-      ],
-      "size": [
-        270,
-        100
-      ],
-      "flags": {},
-      "order": 21,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 912
-        },
-        {
-          "name": "positive",
-          "type": "CONDITIONING",
-          "link": 889
-        },
-        {
-          "name": "negative",
-          "type": "CONDITIONING",
-          "link": 888
-        }
-      ],
-      "outputs": [
-        {
-          "name": "GUIDER",
-          "type": "GUIDER",
-          "links": [
-            867
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.8.2",
-        "Node name for S&R": "CFGGuider",
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "version": "7.7.1",
-          "input_ue_unconnectable": {}
-        },
-        "enableTabs": false,
-        "tabWidth": 65,
-        "tabXOffset": 10,
-        "hasSecondTab": false,
-        "secondTabText": "Send Back",
-        "secondTabOffset": 80,
-        "secondTabWidth": 65
-      },
-      "widgets_values": [
         1
       ]
     },
@@ -984,77 +923,6 @@
       ]
     },
     {
-      "id": 303,
-      "type": "Power Lora Loader (rgthree)",
-      "pos": [
-        682.5225652027376,
-        89.43551152114107
-      ],
-      "size": [
-        340.519921875,
-        142
-      ],
-      "flags": {},
-      "order": 12,
-      "mode": 0,
-      "inputs": [
-        {
-          "dir": 3,
-          "name": "model",
-          "type": "MODEL",
-          "link": 913
-        },
-        {
-          "dir": 3,
-          "name": "clip",
-          "type": "CLIP",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "dir": 4,
-          "name": "MODEL",
-          "shape": 3,
-          "type": "MODEL",
-          "links": [
-            912
-          ]
-        },
-        {
-          "dir": 4,
-          "name": "CLIP",
-          "shape": 3,
-          "type": "CLIP",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "rgthree-comfy",
-        "ver": "1.0.2512112053",
-        "Show Strengths": "Single Strength",
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {},
-          "version": "7.8"
-        }
-      },
-      "widgets_values": [
-        {},
-        {
-          "type": "PowerLoraLoaderHeaderWidget"
-        },
-        {
-          "on": true,
-          "lora": "FKlein9B\\lora.safetensors",
-          "strength": 1,
-          "strengthTwo": null
-        },
-        {},
-        ""
-      ]
-    },
-    {
       "id": 271,
       "type": "SaveImage",
       "pos": [
@@ -1165,60 +1033,6 @@
       "bgcolor": "#653"
     },
     {
-      "id": 283,
-      "type": "UNETLoader",
-      "pos": [
-        -48.22151611364033,
-        197.04224777714663
-      ],
-      "size": [
-        370,
-        90
-      ],
-      "flags": {},
-      "order": 6,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "MODEL",
-          "type": "MODEL",
-          "links": [
-            874,
-            913
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.8.2",
-        "Node name for S&R": "UNETLoader",
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "version": "7.7.1",
-          "input_ue_unconnectable": {}
-        },
-        "enableTabs": false,
-        "tabWidth": 65,
-        "tabXOffset": 10,
-        "hasSecondTab": false,
-        "secondTabText": "Send Back",
-        "secondTabOffset": 80,
-        "secondTabWidth": 65,
-        "models": [
-          {
-            "name": "flux-2-klein-9b-fp8.safetensors",
-            "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8/resolve/main/flux-2-klein-9b-fp8.safetensors",
-            "directory": "diffusion_models"
-          }
-        ]
-      },
-      "widgets_values": [
-        "flux-2-klein-9b-fp8.safetensors",
-        "default"
-      ]
-    },
-    {
       "id": 285,
       "type": "VAELoader",
       "pos": [
@@ -1230,7 +1044,7 @@
         60
       ],
       "flags": {},
-      "order": 7,
+      "order": 6,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -1327,6 +1141,177 @@
       ],
       "color": "#232",
       "bgcolor": "#353"
+    },
+    {
+      "id": 283,
+      "type": "UNETLoader",
+      "pos": [
+        -48.22151611364033,
+        197.04224777714663
+      ],
+      "size": [
+        370,
+        90
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            874,
+            931
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.8.2",
+        "Node name for S&R": "UNETLoader",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.7.1",
+          "input_ue_unconnectable": {}
+        },
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65,
+        "models": [
+          {
+            "name": "flux-2-klein-9b-fp8.safetensors",
+            "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-fp8/resolve/main/flux-2-klein-9b-fp8.safetensors",
+            "directory": "diffusion_models"
+          }
+        ]
+      },
+      "widgets_values": [
+        "flux-2-klein-9b-fp8.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 305,
+      "type": "Lora Loader Stack (rgthree)",
+      "pos": [
+        578.7828370717709,
+        -33.56011427239264
+      ],
+      "size": [
+        282.9,
+        246
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 931
+        },
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            930
+          ]
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "rgthree-comfy",
+        "ver": "683836c46e898668936c433502504cc0627482c5",
+        "Node name for S&R": "LoraLoaderStack_rgthree"
+      },
+      "widgets_values": [
+        "None",
+        1,
+        "None",
+        1,
+        "None",
+        1,
+        "None",
+        1
+      ]
+    },
+    {
+      "id": 273,
+      "type": "CFGGuider",
+      "pos": [
+        1197.9827231053032,
+        234.64744769528795
+      ],
+      "size": [
+        270,
+        100
+      ],
+      "flags": {},
+      "order": 21,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 930
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 889
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 888
+        }
+      ],
+      "outputs": [
+        {
+          "name": "GUIDER",
+          "type": "GUIDER",
+          "links": [
+            867
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.8.2",
+        "Node name for S&R": "CFGGuider",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "version": "7.7.1",
+          "input_ue_unconnectable": {}
+        },
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65
+      },
+      "widgets_values": [
+        1
+      ]
     }
   ],
   "links": [
@@ -1523,22 +1508,6 @@
       "IMAGE"
     ],
     [
-      912,
-      303,
-      0,
-      273,
-      0,
-      "MODEL"
-    ],
-    [
-      913,
-      283,
-      0,
-      303,
-      0,
-      "MODEL"
-    ],
-    [
       926,
       285,
       0,
@@ -1569,12 +1538,28 @@
       299,
       0,
       "IMAGE"
+    ],
+    [
+      930,
+      305,
+      0,
+      273,
+      0,
+      "MODEL"
+    ],
+    [
+      931,
+      283,
+      0,
+      305,
+      0,
+      "MODEL"
     ]
   ],
   "groups": [],
   "config": {},
   "extra": {
-    "frontendVersion": "1.42.11",
+    "frontendVersion": "1.42.14",
     "workflowRendererVersion": "LG",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
@@ -1583,10 +1568,10 @@
     "ue_links": [],
     "links_added_by_ue": [],
     "ds": {
-      "scale": 1.1167815779426384,
+      "scale": 0.9229599817707755,
       "offset": [
-        -1446.4995142981336,
-        44.018739513612346
+        -50.28199889774086,
+        258.2235623050992
       ]
     }
   },

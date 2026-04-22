@@ -34,7 +34,7 @@
     "inputs": {
       "cfg": 1,
       "model": [
-        "303",
+        "305",
         0
       ],
       "positive": [
@@ -322,30 +322,24 @@
       "title": "画像を総ピクセルにスケール"
     }
   },
-  "303": {
+  "305": {
     "inputs": {
-      "PowerLoraLoaderHeaderWidget": {
-        "type": "PowerLoraLoaderHeaderWidget"
-      },
-      "lora_1": {
-        "on": true,
-        "lora": "FKlein9B\\lora.safetensors",
-        "strength": 1
-      },
-      "lora_2": {
-        "on": true,
-        "lora": "FKlein9B\\lora2.safetensors",
-        "strength": 1
-      },
-      "➕ Add Lora": "",
+      "lora_01": "None",
+      "strength_01": 1,
+      "lora_02": "None",
+      "strength_02": 1,
+      "lora_03": "None",
+      "strength_03": 1,
+      "lora_04": "None",
+      "strength_04": 1,
       "model": [
         "283",
         0
       ]
     },
-    "class_type": "Power Lora Loader (rgthree)",
+    "class_type": "Lora Loader Stack (rgthree)",
     "_meta": {
-      "title": "Power Lora Loader (rgthree)"
+      "title": "Lora Loader Stack (rgthree)"
     }
   }
 }
