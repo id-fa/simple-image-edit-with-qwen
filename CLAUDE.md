@@ -24,13 +24,14 @@ Python scripts for AI-powered image editing using diffusion models:
 13. **server/app_comfyui_gguf.py** - Flask web server using ComfyUI API backend for GGUF workflow (no torch/diffusers dependency)
 14. **server/app_comfyui_klein.py** - Flask web server using ComfyUI API backend for FLUX.2 Klein 9B fp8 workflow (no torch/diffusers dependency)
 15. **server/app_wavespeed_qwen2.py** - Flask web server using WaveSpeed AI cloud API for Qwen-Image-2.0-Pro Edit (no local GPU/torch/diffusers dependency)
+16. **server/app_wavespeed_gpt.py** - Flask web server using WaveSpeed AI cloud API for OpenAI gpt-image-2 Edit (no local GPU/torch/diffusers dependency)
 
 ### Google Colab Notebooks (`notebooks/`)
 14. **notebooks/colab_app_gguf.ipynb** - Google Colab notebook for GGUF web server (cloudflared tunnel, A100 recommended)
 
 ### Utilities
 15. **server/lib/nunchaku_lora_qwen.py** - LoRA loader for NunchakuQwenImageTransformer2DModel (ported from ComfyUI-QwenImageLoraLoader)
-16. **server/lib/gallery_db.py** - Shared SQLite gallery persistence module (room-based DB isolation, used by all 7 web servers)
+16. **server/lib/gallery_db.py** - Shared SQLite gallery persistence module (room-based DB isolation, used by all 9 web servers)
 17. **server/lib/server_common.py** - Shared server core: global state, user hash, gallery ref resolution, cleanup loop, argparse helpers, template loading
 18. **server/lib/server_routes.py** - Shared Flask route handlers: all API routes (submit, status, cancel, result, translate, gallery, drawing, etc.)
 19. **server/lib/image_utils.py** - Shared image preprocessing (round_up, pre_resize, fit_and_align) and LoRA argument parsing for diffusers servers
@@ -49,7 +50,7 @@ Web servers provide browser GUI with password protection, job queue (1 processin
 
 **Target Environment:** GeForce RTX 3xxx (VRAM 12GB) class hardware. Higher-end GPUs can use `--no-offload` or process higher resolutions.
 
-**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein/LTX-2 cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`). Rapid Qwen, FLUX.2 Klein, and LTX-2 can share the same venv (latest diffusers). ComfyUI servers (`app_comfyui.py`, `app_comfyui_nunchaku.py`, `app_comfyui_gguf.py`, `app_comfyui_klein.py`) and WaveSpeed server (`app_wavespeed_qwen2.py`) have no torch/diffusers dependency and use their own lightweight venv.
+**Important:** Qwen (nunchaku/GGUF) and FLUX.2 Klein/LTX-2 cannot coexist in the same venv due to diffusers version conflicts. Nunchaku and GGUF can share the same venv (`diffusers==0.36.x`). Rapid Qwen, FLUX.2 Klein, and LTX-2 can share the same venv (latest diffusers). ComfyUI servers (`app_comfyui.py`, `app_comfyui_nunchaku.py`, `app_comfyui_gguf.py`, `app_comfyui_klein.py`) and WaveSpeed servers (`app_wavespeed_qwen2.py`, `app_wavespeed_gpt.py`) have no torch/diffusers dependency and use their own lightweight venv.
 
 ## Running the Scripts
 
@@ -236,7 +237,7 @@ python app_comfyui_klein.py --gallery --password mysecret
 python app_comfyui_klein.py --preset "高画質化::Enhance quality." --preset "顔を差し替える::Replace the face using the reference image."
 ```
 
-### WaveSpeed Web Server — cloud API (no local GPU)
+### WaveSpeed Web Server — Qwen-Image-2.0-Pro (cloud API, no local GPU)
 ```powershell
 cd server
 python app_wavespeed_qwen2.py
@@ -244,6 +245,16 @@ python app_wavespeed_qwen2.py --password mysecret --port 5000
 python app_wavespeed_qwen2.py --comfyui-url http://127.0.0.1:8188   # enable prompt enhance
 python app_wavespeed_qwen2.py --gallery --password mysecret
 python app_wavespeed_qwen2.py --preset "高画質化::Enhance quality." --preset "テキスト除去::Remove all text."
+```
+
+### WaveSpeed Web Server — OpenAI gpt-image-2 (cloud API, no local GPU)
+```powershell
+cd server
+python app_wavespeed_gpt.py
+python app_wavespeed_gpt.py --password mysecret --port 5000
+python app_wavespeed_gpt.py --comfyui-url http://127.0.0.1:8188   # enable prompt enhance
+python app_wavespeed_gpt.py --gallery --password mysecret
+python app_wavespeed_gpt.py --preset "高画質化::Enhance quality." --preset "テキスト除去::Remove all text."
 ```
 
 ### Web Server Common Options
@@ -318,7 +329,7 @@ python app_wavespeed_qwen2.py --preset "高画質化::Enhance quality." --preset
 - `--enhance-model NAME` (ComfyUI / WaveSpeed) - GGUF model name for prompt enhancement (overrides workflow default)
 - `--comfyui-url URL` (WaveSpeed only) - ComfyUI API URL for prompt enhancement (optional; enhance disabled if omitted)
 
-**Note:** WaveSpeed server (`app_wavespeed_qwen2.py`) requires `WAVESPEED_API_KEY` environment variable. No local GPU needed — all inference via WaveSpeed cloud API. LoRA not supported. Prompt enhancement requires a running ComfyUI instance (`--comfyui-url`).
+**Note:** WaveSpeed servers (`app_wavespeed_qwen2.py`, `app_wavespeed_gpt.py`) require `WAVESPEED_API_KEY` environment variable. No local GPU needed — all inference via WaveSpeed cloud API. LoRA not supported. Prompt enhancement requires a running ComfyUI instance (`--comfyui-url`). Qwen2 variant targets `qwen-image-2.0-pro/edit` and accepts `seed` + explicit pixel `size`; gpt-image-2 variant targets `openai/gpt-image-2/edit` and uses `aspect_ratio` (auto-detected from input, or `1:1` for t2i) instead (no seed parameter).
 
 **Note:** GGUF server does NOT support `--offload` (sequential CPU offload is incompatible with GGUF tensors). Only default (`enable_model_cpu_offload`) and `--no-offload` are available.
 
@@ -378,7 +389,7 @@ pip install flask requests pillow websocket-client googletrans==4.0.0rc1
 
 **Note:** ComfyUI server delegates all inference to a running ComfyUI instance via API. Requires ComfyUI with appropriate models (see workflow JSON files for details), `city96/ComfyUI-GGUF` custom node (GGUF CLIP used by all variants), and ComfyUI-Manager extension for auto-reboot/LoRA path registration.
 
-**Note:** WaveSpeed server (`app_wavespeed_qwen2.py`) can share this venv. `websocket-client` is not required for WaveSpeed but harmless to have installed. Minimum deps: `flask requests pillow googletrans==4.0.0rc1`.
+**Note:** WaveSpeed servers (`app_wavespeed_qwen2.py`, `app_wavespeed_gpt.py`) can share this venv. `websocket-client` is not required for WaveSpeed but harmless to have installed. Minimum deps: `flask requests pillow googletrans==4.0.0rc1`.
 
 ## Architecture
 
@@ -506,7 +517,7 @@ All scripts share this preprocessing flow:
 - Startup checks: ComfyUI connectivity (60s retry), required model availability (UNET/CLIP/VAE)
 - Shares `app_template.html` with all server variants
 
-**WaveSpeed AI API** (`server/app_wavespeed_qwen2.py`):
+**WaveSpeed AI API — Qwen-Image-2.0-Pro** (`server/app_wavespeed_qwen2.py`):
 - No local GPU/torch/diffusers dependency — delegates inference to WaveSpeed cloud API
 - API: `POST /api/v3/wavespeed-ai/qwen-image-2.0-pro/edit` (Qwen-Image-2.0-Pro model)
 - Authentication: `Authorization: Bearer ${WAVESPEED_API_KEY}` (environment variable)
@@ -519,8 +530,19 @@ All scripts share this preprocessing flow:
 - Prompt enhancement: optional, requires `--comfyui-url` pointing to a running ComfyUI instance (reuses `comfyui_enhance.py`)
 - Shares `app_template.html` with all server variants
 
+**WaveSpeed AI API — OpenAI gpt-image-2** (`server/app_wavespeed_gpt.py`):
+- Same upload/polling/enhancement architecture as the Qwen2 variant; differences are confined to the edit-task payload
+- API: `POST /api/v3/openai/gpt-image-2/edit` (OpenAI gpt-image-2 model)
+- Request body: `{images, prompt, aspect_ratio?}` — no `seed`, no explicit `size`. `aspect_ratio` accepts `"1:1"` / `"2:3"` / `"3:2"` (optional)
+- Aspect ratio selection: `pick_aspect_ratio(w, h)` chooses the supported ratio with the smallest log-distance to the first input image's `w/h`; t2i mode always submits a 1024×1024 white blank with `aspect_ratio="1:1"`
+- Seed field in the UI is accepted but silently ignored (API does not support it)
+- Image constraints: spec does not document per-dimension limits; local preprocess keeps a safety cap at `MAX_DIM=3072` and no `MIN_DIM` clamp
+- Poll URL: uses `data.urls.get` from the submit response (canonical), falls back to `/api/v3/predictions/{task_id}/result`
+- No LoRA support, `has_preview=False`, `get_total_steps=1`, local-only cancel (same as Qwen2 variant)
+- Shares `app_template.html` with all server variants
+
 **Prompt Enhancement** (`server/lib/comfyui_enhance.py`):
-- Shared helper for all 4 ComfyUI servers and WaveSpeed server. `run_enhance(upload_fn, submit_fn, get_history_fn, workflow_template, prompt_text, image_bytes, image2_bytes)` runs the `enhance_prompt_api.json` workflow on ComfyUI
+- Shared helper for all 4 ComfyUI servers and both WaveSpeed servers. `run_enhance(upload_fn, submit_fn, get_history_fn, workflow_template, prompt_text, image_bytes, image2_bytes)` runs the `enhance_prompt_api.json` workflow on ComfyUI
 - Workflow uses `AILab_QwenVL_GGUF_Advanced` node (Huihui-Qwen3.5-4B-abliterated GGUF) → `PreviewAny` (text output)
 - Image handling: Img1 (node 12) and Img2 (node 59) are each uploaded to ComfyUI if provided; if not, a 256x256 white placeholder is uploaded to keep the workflow graph intact
 - Text extraction from ComfyUI history: tries `outputs["33"]["text"][0]` (PreviewAny), falls back to node 30 and other nodes
@@ -529,7 +551,7 @@ All scripts share this preprocessing flow:
 - Route `POST /api/enhance` registered conditionally via `enhance_fn` callback in `register_routes()`
 
 **Gallery Persistence** (`server/lib/gallery_db.py`):
-- Shared SQLite module used by all 8 web servers
+- Shared SQLite module used by all 9 web servers
 - `GalleryDB` class: thread-safe (new connection per operation), WAL mode
 - Tables: `gallery_jobs` (job_id, created, prompt, seed, t2i, input_count, user_hash, status, input_paths JSON, result_path, original_prompt, input_names JSON), `drawings` (drawing_id, user_hash, created, type, source, path, bg_path, overlay_path)
 - Room isolation: `get_room_db(db_dir, room_name)` → cached `GalleryDB` instances, room name hashed (SHA-256) to `room_{hash}.db`
@@ -643,11 +665,13 @@ svdq-{precision}_r{rank}-qwen-image-edit-2509-lightning-{steps}steps-251115.safe
 | ComfyUI GGUF node missing | Install `city96/ComfyUI-GGUF` custom node (`UnetLoaderGGUF`, `CLIPLoaderGGUF`) — required by Qwen ComfyUI servers (AIO/Nunchaku/GGUF use GGUF CLIP). Klein variant does not require this |
 | ComfyUI Klein model not found | Download `flux-2-klein-9b-fp8.safetensors` to `models/diffusion_models/`, `qwen_3_8b_fp8mixed.safetensors` to `models/text_encoders/`, `full_encoder_small_decoder.safetensors` to `models/vae/` (URLs shown at startup) |
 | ComfyUI Klein LoRA limit | Max 3 LoRAs per generation (3 chained `LoraLoaderModelOnly` slots). Extra selections beyond the 3rd are ignored |
-| WaveSpeed API key missing | Set `WAVESPEED_API_KEY` environment variable before starting `app_wavespeed_qwen2.py` |
+| WaveSpeed API key missing | Set `WAVESPEED_API_KEY` environment variable before starting `app_wavespeed_qwen2.py` / `app_wavespeed_gpt.py` |
 | WaveSpeed API 401 | Invalid or expired API key; check key at wavespeed.ai/accesskey |
 | WaveSpeed API 429 | Rate limit exceeded; reduce request frequency |
 | WaveSpeed timeout | API task did not complete within 600s; check WaveSpeed service status |
 | WaveSpeed enhance disabled | Prompt enhancement requires `--comfyui-url` pointing to a running ComfyUI instance |
+| gpt-image-2 seed ignored | API does not support `seed`; UI input is accepted but not sent (use `app_wavespeed_qwen2.py` for seeded generation) |
+| gpt-image-2 aspect mismatch | Only `1:1`/`2:3`/`3:2` are supported; server picks the closest match to the input image. For precise aspect, pre-crop the input or use t2i mode (forces `1:1`) |
 
 ## Cache Management
 
