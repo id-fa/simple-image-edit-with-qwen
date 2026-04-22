@@ -12,6 +12,8 @@ AI画像編集Webサーバーの機能説明と操作方法です。
 | **ComfyUI (AIO)** | `app_comfyui.py` | ComfyUI API経由 (AIOワークフロー) | torch/diffusers不要。別途ComfyUI実行が必要 |
 | **ComfyUI (Nunchaku)** | `app_comfyui_nunchaku.py` | ComfyUI API経由 (Nunchakuワークフロー) | torch/diffusers不要。別途ComfyUI実行が必要 |
 | **ComfyUI (GGUF)** | `app_comfyui_gguf.py` | ComfyUI API経由 (GGUFワークフロー) | torch/diffusers不要。GGUF量子化モデル使用 |
+| **ComfyUI (Klein)** | `app_comfyui_klein.py` | FLUX.2 Klein 9B fp8 (ComfyUI API経由) | FLUX.2 Klein をComfyUI側で最適化して実行。Qwen系より高速な推論が可能 |
+| **WaveSpeed** | `app_wavespeed_qwen2.py` | Qwen-Image-2.0-Pro Edit (WaveSpeed AI クラウドAPI) | 有償クラウドAPIを利用したQwen-Image最新版。ローカルGPU不要 |
 
 ## 起動方法
 
@@ -63,6 +65,32 @@ python app_comfyui_gguf.py
 python app_comfyui_gguf.py --password mysecret --port 5000
 python app_comfyui_gguf.py --comfyui-url http://192.168.1.100:8188
 python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
+
+# ComfyUI (FLUX.2 Klein 9B fp8ワークフロー)
+python app_comfyui_klein.py
+python app_comfyui_klein.py --password mysecret --port 5000
+python app_comfyui_klein.py --comfyui-url http://192.168.1.100:8188
+python app_comfyui_klein.py --comfyui-path D:\ComfyUI
+python app_comfyui_klein.py --steps 4 --cfg 1.0
+```
+
+### WaveSpeed版の起動
+
+WaveSpeed版は有償クラウドAPI (wavespeed.ai) を利用するため、ローカルGPUやtorch/diffusersは不要です。`WAVESPEED_API_KEY` 環境変数にAPIキーを設定してから起動してください。
+
+```powershell
+cd server
+
+# APIキー設定
+$env:WAVESPEED_API_KEY = "your_api_key_here"
+
+# WaveSpeed (Qwen-Image-2.0-Pro Edit)
+python app_wavespeed_qwen2.py
+python app_wavespeed_qwen2.py --password mysecret --port 5000
+python app_wavespeed_qwen2.py --gallery --password mysecret
+
+# プロンプト拡張を有効にするにはComfyUIインスタンスを併用
+python app_wavespeed_qwen2.py --comfyui-url http://127.0.0.1:8188
 ```
 
 ### 起動オプション一覧
@@ -88,17 +116,19 @@ python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
 | `--gguf-file PATH` | GGUF | HFリポジトリ内のGGUFファイル |
 | `--gguf-local PATH` | GGUF | ローカルGGUFファイルを直接使用 |
 | `--offload` | AIO | 逐次CPUオフロード（低VRAM向け） |
-| `--comfyui-url URL` | ComfyUI両版 | ComfyUI API URL（デフォルト: `http://127.0.0.1:8188`） |
-| `--comfyui-path DIR` | ComfyUI両版 | ComfyUIインストールディレクトリ。LoRAパスを自動登録してComfyUIを再起動 |
-| `--steps N` | ComfyUI両版 | 推論ステップ数（デフォルト: 8） |
-| `--cfg N` | ComfyUI両版 | CFGスケール（デフォルト: 1.0） |
-| `--enhance-model NAME` | ComfyUI両版 | プロンプト拡張用GGUFモデル名（ワークフローのデフォルトを上書き） |
+| `--comfyui-url URL` | ComfyUI全般 / WaveSpeed | ComfyUI API URL（デフォルト: `http://127.0.0.1:8188`）。WaveSpeedではプロンプト拡張用 |
+| `--comfyui-path DIR` | ComfyUI全般 | ComfyUIインストールディレクトリ。LoRAパスを自動登録してComfyUIを再起動 |
+| `--steps N` | ComfyUI全般 | 推論ステップ数（AIO/Nunchaku/GGUF: 8、Klein: 4） |
+| `--cfg N` | ComfyUI全般 | CFGスケール（デフォルト: 1.0） |
+| `--enhance-model NAME` | ComfyUI全般 / WaveSpeed | プロンプト拡張用GGUFモデル名（ワークフローのデフォルトを上書き） |
 
 > **注意:** GGUFサーバーは `--offload` 非対応（GGUF tensorsと互換性なし）。
 > **注意:** AIOサーバーはGGUFより大幅にVRAMが必要（bf16フル精度）。
 > **注意:** ComfyUI版は別途ComfyUIの起動が必要です。起動時に接続を確認し、失敗すると60秒後にリトライします。
 > **注意:** ComfyUI (Nunchaku) 版はNunchakuライブラリとカスタムノード `nunchaku-ai/ComfyUI-nunchaku`、`ussoewwin/ComfyUI-QwenImageLoraLoader` のインストールが必要です。
-> **注意:** ComfyUI版はカスタムノード `city96/ComfyUI-GGUF` のインストールが必要です（テキストエンコーダおよびプロンプト拡張でGGUFモデルを使用）。
+> **注意:** ComfyUI (AIO / Nunchaku / GGUF) 版はカスタムノード `city96/ComfyUI-GGUF` のインストールが必要です（テキストエンコーダおよびプロンプト拡張でGGUFモデルを使用）。Klein版はGGUFを使わないため不要です。
+> **注意:** ComfyUI (Klein) 版は `flux-2-klein-9b-fp8.safetensors`、`qwen_3_8b_fp8mixed.safetensors`、`full_encoder_small_decoder.safetensors` の3ファイルをComfyUIの `models/diffusion_models/`, `models/text_encoders/`, `models/vae/` にそれぞれ配置する必要があります（未配置時は起動時にダウンロードURLが表示されます）。LoRAは標準の `LoraLoaderModelOnly` を使うためカスタムノード不要です。
+> **注意:** WaveSpeed版はAPIキー環境変数 `WAVESPEED_API_KEY` が必要です。取得は [wavespeed.ai/accesskey](https://wavespeed.ai/accesskey) から。ローカル推論しないのでLoRAは未対応、キャンセルもローカル内の待機ループのみです。プロンプト拡張は `--comfyui-url` で別途ComfyUIを指定した場合のみ利用できます。
 
 ---
 
@@ -221,6 +251,8 @@ python app_nunchaku.py --lora "lora1.safetensors" --lora "lora2.safetensors"
 | **ComfyUI (AIO)** | ワークフロー内 `LoraLoaderModelOnly` ノード（最大3個） | ComfyUI依存 |
 | **ComfyUI (Nunchaku)** | `NunchakuQwenImageLoraStackV3` ノード（最大10個） | ComfyUI依存 |
 | **ComfyUI (GGUF)** | ワークフロー内 `LoraLoaderModelOnly` ノード（最大3個） | ComfyUI依存 |
+| **ComfyUI (Klein)** | ワークフロー内 `LoraLoaderModelOnly` ノード（最大3個） | ComfyUI依存 |
+| **WaveSpeed** | LoRA非対応（クラウドAPIの制限） | - |
 
 Nunchaku版では、LoRAの有効/無効や強度を変更すると、次の生成開始時にパイプラインが自動的にリロードされます。同じ構成のまま連続生成する場合はリロードは発生しません。
 
@@ -392,6 +424,8 @@ Feature overview and usage instructions for the AI image editing web server.
 | **ComfyUI (AIO)** | `app_comfyui.py` | Via ComfyUI API (AIO workflow) | No torch/diffusers dependency. Requires separate ComfyUI instance |
 | **ComfyUI (Nunchaku)** | `app_comfyui_nunchaku.py` | Via ComfyUI API (Nunchaku workflow) | No torch/diffusers dependency. Requires separate ComfyUI instance |
 | **ComfyUI (GGUF)** | `app_comfyui_gguf.py` | Via ComfyUI API (GGUF workflow) | No torch/diffusers dependency. Uses GGUF quantized models |
+| **ComfyUI (Klein)** | `app_comfyui_klein.py` | FLUX.2 Klein 9B fp8 (via ComfyUI API) | FLUX.2 Klein optimized on the ComfyUI side — faster inference than the Qwen variants |
+| **WaveSpeed** | `app_wavespeed_qwen2.py` | Qwen-Image-2.0-Pro Edit (WaveSpeed AI cloud API) | Latest Qwen-Image model via paid cloud API. No local GPU required |
 
 ## Getting Started
 
@@ -442,6 +476,32 @@ python app_comfyui_gguf.py
 python app_comfyui_gguf.py --password mysecret --port 5000
 python app_comfyui_gguf.py --comfyui-url http://192.168.1.100:8188
 python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
+
+# ComfyUI (FLUX.2 Klein 9B fp8 workflow)
+python app_comfyui_klein.py
+python app_comfyui_klein.py --password mysecret --port 5000
+python app_comfyui_klein.py --comfyui-url http://192.168.1.100:8188
+python app_comfyui_klein.py --comfyui-path D:\ComfyUI
+python app_comfyui_klein.py --steps 4 --cfg 1.0
+```
+
+### WaveSpeed Server Startup
+
+The WaveSpeed server uses the paid cloud API at wavespeed.ai, so no local GPU or torch/diffusers is required. Set your API key in the `WAVESPEED_API_KEY` environment variable before starting.
+
+```powershell
+cd server
+
+# Set the API key
+$env:WAVESPEED_API_KEY = "your_api_key_here"
+
+# WaveSpeed (Qwen-Image-2.0-Pro Edit)
+python app_wavespeed_qwen2.py
+python app_wavespeed_qwen2.py --password mysecret --port 5000
+python app_wavespeed_qwen2.py --gallery --password mysecret
+
+# Enable prompt enhancement by pointing at a running ComfyUI instance
+python app_wavespeed_qwen2.py --comfyui-url http://127.0.0.1:8188
 ```
 
 ### Startup Options
@@ -467,17 +527,19 @@ python app_comfyui_gguf.py --comfyui-path D:\ComfyUI
 | `--gguf-file PATH` | GGUF | GGUF file within HF repository |
 | `--gguf-local PATH` | GGUF | Use local GGUF file directly |
 | `--offload` | AIO | Sequential CPU offload (low VRAM) |
-| `--comfyui-url URL` | ComfyUI both | ComfyUI API URL (default: `http://127.0.0.1:8188`) |
-| `--comfyui-path DIR` | ComfyUI both | ComfyUI installation directory. Auto-registers LoRA path and reboots ComfyUI |
-| `--steps N` | ComfyUI both | Inference steps (default: 8) |
-| `--cfg N` | ComfyUI both | CFG scale (default: 1.0) |
-| `--enhance-model NAME` | ComfyUI both | GGUF model name for prompt enhancement (overrides workflow default) |
+| `--comfyui-url URL` | All ComfyUI / WaveSpeed | ComfyUI API URL (default: `http://127.0.0.1:8188`). For WaveSpeed, used only for prompt enhancement |
+| `--comfyui-path DIR` | All ComfyUI | ComfyUI installation directory. Auto-registers LoRA path and reboots ComfyUI |
+| `--steps N` | All ComfyUI | Inference steps (AIO/Nunchaku/GGUF: 8, Klein: 4) |
+| `--cfg N` | All ComfyUI | CFG scale (default: 1.0) |
+| `--enhance-model NAME` | All ComfyUI / WaveSpeed | GGUF model name for prompt enhancement (overrides workflow default) |
 
 > **Note:** The GGUF server does not support `--offload` (incompatible with GGUF tensors).
 > **Note:** The AIO server requires significantly more VRAM than GGUF (bf16 full precision).
 > **Note:** ComfyUI servers require a separate running ComfyUI instance. Connection is verified at startup with a 60-second retry.
 > **Note:** ComfyUI (Nunchaku) requires the Nunchaku library and custom nodes `nunchaku-ai/ComfyUI-nunchaku` and `ussoewwin/ComfyUI-QwenImageLoraLoader`.
-> **Note:** ComfyUI servers require custom node `city96/ComfyUI-GGUF` (GGUF models used for text encoder and prompt enhancement).
+> **Note:** ComfyUI (AIO / Nunchaku / GGUF) requires custom node `city96/ComfyUI-GGUF` (GGUF models used for text encoder and prompt enhancement). The Klein variant does NOT need this.
+> **Note:** ComfyUI (Klein) requires three files in ComfyUI's `models/`: `flux-2-klein-9b-fp8.safetensors` (diffusion_models/), `qwen_3_8b_fp8mixed.safetensors` (text_encoders/), and `full_encoder_small_decoder.safetensors` (vae/). Download URLs are printed at startup if any are missing. LoRA uses stock `LoraLoaderModelOnly` nodes — no custom node dependency.
+> **Note:** WaveSpeed requires the `WAVESPEED_API_KEY` environment variable. Obtain a key at [wavespeed.ai/accesskey](https://wavespeed.ai/accesskey). No LoRA support (cloud API limitation), and cancel is local-only (stops the polling loop; no remote cancel API). Prompt enhancement works only if you also pass `--comfyui-url` pointing at a running ComfyUI.
 
 ---
 
@@ -600,6 +662,8 @@ python app_nunchaku.py --lora "lora1.safetensors" --lora "lora2.safetensors"
 | **ComfyUI (AIO)** | `LoraLoaderModelOnly` nodes in workflow (max 3) | ComfyUI dependent |
 | **ComfyUI (Nunchaku)** | `NunchakuQwenImageLoraStackV3` node (max 10) | ComfyUI dependent |
 | **ComfyUI (GGUF)** | `LoraLoaderModelOnly` nodes in workflow (max 3) | ComfyUI dependent |
+| **ComfyUI (Klein)** | `LoraLoaderModelOnly` nodes in workflow (max 3) | ComfyUI dependent |
+| **WaveSpeed** | Not supported (cloud API limitation) | - |
 
 In the Nunchaku version, changing LoRA enable/disable or strength triggers an automatic pipeline reload before the next generation. Consecutive generations with the same config skip the reload.
 
@@ -876,4 +940,5 @@ git clone https://github.com/ussoewwin/ComfyUI-QwenImageLoraLoader.git
 | `app_comfyui.py` | `server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_base.json` |
 | `app_comfyui_gguf.py` | `server/comfyui_workflow/comfyui_qwen_image_edit_AIO_v23_gguf_base.json` |
 | `app_comfyui_nunchaku.py` | `server/comfyui_workflow/comfyui_qwen_image_edit_nunchaku_base.json` |
+| `app_comfyui_klein.py` | `server/comfyui_workflow/comfyui_flux1klein9b_api.json` |
 | (共通) プロンプト拡張 | `server/comfyui_workflow/enhance_prompt.json` |

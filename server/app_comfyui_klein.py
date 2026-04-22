@@ -120,11 +120,13 @@ WF_NODE = {
     "noise":            "286",   # RandomNoise (seed)
     "scheduler":        "288",   # BasicScheduler (steps)
     "guider":           "273",   # CFGGuider (cfg, model input via LoRA chain)
-    "lora_loader":      "305",   # Lora Loader Stack (rgthree) — 4 fixed slots
+    "lora_loader1":     "306",   # LoraLoaderModelOnly slot 1
+    "lora_loader2":     "307",   # LoraLoaderModelOnly slot 2
+    "lora_loader3":     "308",   # LoraLoaderModelOnly slot 3
     "save_image":       "271",   # SaveImage
 }
 
-MAX_LORA_SLOTS = 4
+MAX_LORA_SLOTS = 3
 
 
 # =======================
@@ -499,29 +501,22 @@ def build_workflow(image1_name: str, image2_name: str | None, prompt: str,
     wf[N["scheduler"]]["inputs"]["steps"] = configured_steps
     wf[N["guider"]]["inputs"]["cfg"] = configured_cfg
 
-    # LoRA handling — Lora Loader Stack (rgthree) with 4 fixed slots (lora_01..lora_04)
-    # Disabled slots use the sentinel string "None".
+    # LoRA handling — 3 chained LoraLoaderModelOnly slots
+    # (UNET -> 306 -> 307 -> 308 -> CFGGuider). Unused tail slots are deleted
+    # and CFGGuider.model is rewired to the last active loader (or UNET).
     active_loras = [l for l in (loras or []) if abs(l.get("scale", 1.0)) > 1e-5][:MAX_LORA_SLOTS]
 
-    lora_node = wf.get(N["lora_loader"])
-    if lora_node is None:
-        pass
-    elif not active_loras:
-        # No LoRAs: drop the Lora Loader Stack and rewire guider.model -> unet_loader
-        del wf[N["lora_loader"]]
-        wf[N["guider"]]["inputs"]["model"] = [N["unet_loader"], 0]
-    else:
-        # Fill 4 fixed slots; unused slots set to "None"
-        for i in range(1, MAX_LORA_SLOTS + 1):
-            slot = f"{i:02d}"  # "01", "02", "03", "04"
-            if i <= len(active_loras):
-                lora_node["inputs"][f"lora_{slot}"] = active_loras[i - 1]["comfyui_name"]
-                lora_node["inputs"][f"strength_{slot}"] = active_loras[i - 1]["scale"]
-            else:
-                lora_node["inputs"][f"lora_{slot}"] = "None"
-                lora_node["inputs"][f"strength_{slot}"] = 1
-        # Ensure guider.model points at the LoRA loader
-        wf[N["guider"]]["inputs"]["model"] = [N["lora_loader"], 0]
+    loader_keys = ["lora_loader1", "lora_loader2", "lora_loader3"]
+    last_model_source = [N["unet_loader"], 0]
+    for i, key in enumerate(loader_keys):
+        if i < len(active_loras):
+            wf[N[key]]["inputs"]["lora_name"] = active_loras[i]["comfyui_name"]
+            wf[N[key]]["inputs"]["strength_model"] = active_loras[i]["scale"]
+            last_model_source = [N[key], 0]
+        else:
+            del wf[N[key]]
+
+    wf[N["guider"]]["inputs"]["model"] = last_model_source
 
     return wf
 
@@ -773,16 +768,6 @@ def main():
         print(f"[info] UNET: {unet_name} ✓", file=sys.stderr)
         print(f"[info] CLIP: {clip_name} ✓", file=sys.stderr)
         print(f"[info] VAE:  {vae_name} ✓", file=sys.stderr)
-
-    # Verify Lora Loader Stack (rgthree) availability — only needed when LoRAs are active
-    try:
-        resp = http_requests.get(f"{comfyui_url}/object_info/Lora Loader Stack (rgthree)", timeout=10)
-        if resp.status_code == 200:
-            print("[info] Lora Loader Stack (rgthree) node ✓", file=sys.stderr)
-        else:
-            print("[warn] Lora Loader Stack (rgthree) node not found. Install rgthree-comfy for LoRA support.", file=sys.stderr)
-    except Exception:
-        print("[warn] Could not verify Lora Loader Stack (rgthree) node availability.", file=sys.stderr)
 
     # Auto-register LoRA path in ComfyUI's extra_model_paths.yaml
     yaml_modified = False
