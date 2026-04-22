@@ -295,6 +295,51 @@ button.cancel-btn:disabled { background: #4a4a5a; }
   margin-top: 8px;
 }
 .blank-sketch-btn:hover { background: #3a3a4a; }
+/* Collage Editor */
+#collageEditor {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.95);
+  flex-direction: column; align-items: center;
+}
+#collageEditor.visible { display: flex; }
+.co-toolbar {
+  width: 100%; padding: 6px 12px;
+  background: #1a1a24; border-bottom: 1px solid #2a2a3a;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  z-index: 1;
+}
+.co-group { display: flex; gap: 3px; align-items: center; }
+.co-sep { width: 1px; height: 24px; background: #3a3a4a; margin: 0 4px; }
+.co-tool-btn {
+  padding: 3px 8px; font-size: 0.75rem;
+  background: #2a2a3a; border: 1px solid #4a4a5a;
+  border-radius: 4px; color: #d1d5db; cursor: pointer;
+  white-space: nowrap;
+}
+.co-tool-btn.active { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.co-tool-btn:hover { background: #3a3a4a; }
+.co-action-btn {
+  padding: 3px 10px; font-size: 0.75rem;
+  background: #2a2a3a; border: 1px solid #4a4a5a;
+  border-radius: 4px; color: #d1d5db; cursor: pointer;
+  white-space: nowrap;
+}
+.co-action-btn:hover { background: #3a3a4a; }
+.co-action-btn.save { background: #065f46; border-color: #10b981; color: #d1fae5; }
+.co-action-btn.save:hover { background: #047857; }
+.co-action-btn.close { background: #7f1d1d; border-color: #ef4444; color: #fecaca; }
+.co-action-btn.close:hover { background: #991b1b; }
+.co-canvas-area {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  overflow: auto; width: 100%; padding: 12px;
+}
+.co-canvas-wrap { position: relative; display: inline-block; }
+#collageCanvas {
+  display: block; max-width: 95vw; max-height: calc(100vh - 100px);
+  touch-action: none; cursor: default;
+  background: repeating-conic-gradient(#1a1a24 0 25%, #2a2a3a 0 50%) 50% / 20px 20px;
+}
+#collageCanvas.dragover { outline: 3px dashed #a78bfa; outline-offset: -3px; }
 .gallery-item {
   background: #12121a; border: 1px solid #2a2a3a;
   border-radius: 8px; padding: 12px;
@@ -398,6 +443,7 @@ button.cancel-btn:disabled { background: #4a4a5a; }
         <div id="galleryInd2" style="font-size:0.75rem; color:#a78bfa; margin-top:2px;"></div>
       </div>
       <button type="button" class="blank-sketch-btn" onclick="openBlankCanvas()">+ Blank Sketch</button>
+      <button type="button" class="blank-sketch-btn" onclick="openCollageEditor()">+ Grid Collage</button>
     </div>
 
     <div style="display:flex;align-items:center;gap:6px;">
@@ -517,6 +563,48 @@ button.cancel-btn:disabled { background: #4a4a5a; }
       <button onclick="deCopyRegion('composite')">Copy (+bg)</button>
     </div>
     <div id="deLoupe"><canvas id="deLoupeCanvas" width="280" height="280"></canvas></div>
+  </div>
+
+  <div id="collageEditor">
+    <div class="co-toolbar">
+      <div class="co-group">
+        <span class="de-group-label">Grid:</span>
+        <button class="co-tool-btn" data-cols="2" data-rows="1">1&times;2</button>
+        <button class="co-tool-btn" data-cols="1" data-rows="2">2&times;1</button>
+        <button class="co-tool-btn active" data-cols="2" data-rows="2">2&times;2</button>
+        <button class="co-tool-btn" data-cols="1" data-rows="4">4&times;1</button>
+        <button class="co-tool-btn" data-cols="4" data-rows="1">1&times;4</button>
+      </div>
+      <div class="co-sep"></div>
+      <div class="co-group">
+        <span class="de-group-label">BG:</span>
+        <button class="co-tool-btn active" data-bg="#000000" style="background:#000;color:#fff;border-color:#555;">Black</button>
+        <button class="co-tool-btn" data-bg="#ffffff" style="background:#fff;color:#000;border-color:#bbb;">White</button>
+      </div>
+      <div class="co-sep"></div>
+      <div class="co-group">
+        <label style="font-size:0.75rem;color:#c4b5fd;cursor:pointer;">
+          <input type="checkbox" id="coKeepRatio" checked style="vertical-align:middle;"> Lock ratio
+        </label>
+      </div>
+      <div class="co-sep"></div>
+      <div class="co-group">
+        <button class="co-action-btn" onclick="coClearActiveCell()">Clear cell</button>
+        <button class="co-action-btn" onclick="coClearAllCells()">Clear all</button>
+        <button class="co-action-btn save" onclick="coConfirm()">Confirm &rarr; Edit</button>
+        <button class="co-action-btn close" onclick="closeCollageEditor()">Cancel</button>
+      </div>
+      <div style="flex:1;"></div>
+      <div style="font-size:0.7rem;color:#9ca3af;">
+        Drop image on a cell &middot; Drag to move &middot; Corners to resize &middot; Click cell to select
+      </div>
+    </div>
+    <div class="co-canvas-area">
+      <div class="co-canvas-wrap">
+        <canvas id="collageCanvas"></canvas>
+      </div>
+    </div>
+    <input type="file" id="coFileInput" accept="image/*" style="display:none;">
   </div>
 </div>
 
@@ -1308,6 +1396,426 @@ function openBlankCanvas() {
   editor.style.display = 'flex';
   deDrawSaveState();
 }
+
+// === Grid Collage Editor ===
+const CO_CELL_SIZE = 512;
+const CO_HANDLE_SIZE = 16;
+const CO_MIN_IMG = 20;
+let coCols = 2, coRows = 2;
+let coBgColor = '#000000';
+let coCells = [];
+let coActiveIdx = -1;
+let coDragging = null;
+let coResizing = null;
+
+function coCellBounds(idx) {
+  const canvas = document.getElementById('collageCanvas');
+  const cellW = canvas.width / coCols;
+  const cellH = canvas.height / coRows;
+  const r = Math.floor(idx / coCols);
+  const c = idx % coCols;
+  return { cx: c * cellW, cy: r * cellH, cw: cellW, ch: cellH };
+}
+
+function coInitCells() {
+  const n = coCols * coRows;
+  const old = coCells;
+  coCells = new Array(n).fill(null).map((_, i) => old[i] || null);
+  if (coActiveIdx >= n) coActiveIdx = -1;
+  for (let i = 0; i < n; i++) {
+    const cell = coCells[i];
+    if (!cell || !cell.img) continue;
+    const b = coCellBounds(i);
+    const scale = Math.max(b.cw / cell.img.naturalWidth, b.ch / cell.img.naturalHeight);
+    const iw = cell.img.naturalWidth * scale;
+    const ih = cell.img.naturalHeight * scale;
+    cell.ix = b.cx + (b.cw - iw) / 2;
+    cell.iy = b.cy + (b.ch - ih) / 2;
+    cell.iw = iw;
+    cell.ih = ih;
+  }
+}
+
+function coResizeCanvas() {
+  const canvas = document.getElementById('collageCanvas');
+  canvas.width = CO_CELL_SIZE * coCols;
+  canvas.height = CO_CELL_SIZE * coRows;
+}
+
+function coPlaceImage(idx, img) {
+  const b = coCellBounds(idx);
+  const iw0 = img.naturalWidth, ih0 = img.naturalHeight;
+  const scale = Math.max(b.cw / iw0, b.ch / ih0);
+  const iw = iw0 * scale, ih = ih0 * scale;
+  coCells[idx] = {
+    img: img,
+    ix: b.cx + (b.cw - iw) / 2,
+    iy: b.cy + (b.ch - ih) / 2,
+    iw: iw, ih: ih,
+    aspect: iw0 / ih0
+  };
+  coActiveIdx = idx;
+  coRender();
+}
+
+function coRender(forConfirm) {
+  const canvas = document.getElementById('collageCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = coBgColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let i = 0; i < coCells.length; i++) {
+    const cell = coCells[i];
+    if (!cell || !cell.img) continue;
+    const b = coCellBounds(i);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(b.cx, b.cy, b.cw, b.ch);
+    ctx.clip();
+    ctx.drawImage(cell.img, cell.ix, cell.iy, cell.iw, cell.ih);
+    ctx.restore();
+  }
+
+  const borderColor = (coBgColor === '#000000') ? '#ffffff' : '#000000';
+  const bw = Math.max(2, Math.round(Math.min(canvas.width, canvas.height) / 256));
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = bw;
+  ctx.strokeRect(bw / 2, bw / 2, canvas.width - bw, canvas.height - bw);
+  const cellW = canvas.width / coCols;
+  const cellH = canvas.height / coRows;
+  for (let c = 1; c < coCols; c++) {
+    ctx.beginPath();
+    ctx.moveTo(c * cellW, 0);
+    ctx.lineTo(c * cellW, canvas.height);
+    ctx.stroke();
+  }
+  for (let r = 1; r < coRows; r++) {
+    ctx.beginPath();
+    ctx.moveTo(0, r * cellH);
+    ctx.lineTo(canvas.width, r * cellH);
+    ctx.stroke();
+  }
+
+  if (forConfirm) return;
+
+  for (let i = 0; i < coCells.length; i++) {
+    const cell = coCells[i];
+    if (cell && cell.img) continue;
+    const b = coCellBounds(i);
+    ctx.save();
+    ctx.fillStyle = (coBgColor === '#000000') ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
+    ctx.font = Math.round(Math.min(b.cw, b.ch) * 0.12) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Drop image', b.cx + b.cw / 2, b.cy + b.ch / 2);
+    ctx.restore();
+  }
+
+  if (coActiveIdx >= 0) {
+    const b = coCellBounds(coActiveIdx);
+    ctx.save();
+    ctx.strokeStyle = '#a78bfa';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 5]);
+    ctx.strokeRect(b.cx + 2, b.cy + 2, b.cw - 4, b.ch - 4);
+    ctx.restore();
+
+    const cell = coCells[coActiveIdx];
+    if (cell && cell.img) {
+      const hs = CO_HANDLE_SIZE;
+      const corners = [
+        { x: cell.ix, y: cell.iy },
+        { x: cell.ix + cell.iw, y: cell.iy },
+        { x: cell.ix, y: cell.iy + cell.ih },
+        { x: cell.ix + cell.iw, y: cell.iy + cell.ih }
+      ];
+      ctx.save();
+      ctx.fillStyle = '#a78bfa';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      corners.forEach(c => {
+        ctx.fillRect(c.x - hs / 2, c.y - hs / 2, hs, hs);
+        ctx.strokeRect(c.x - hs / 2, c.y - hs / 2, hs, hs);
+      });
+      ctx.restore();
+    }
+  }
+}
+
+function coGetCoords(e) {
+  const canvas = document.getElementById('collageCanvas');
+  const r = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (canvas.width / r.width),
+    y: (e.clientY - r.top) * (canvas.height / r.height)
+  };
+}
+
+function coHitCell(p) {
+  const canvas = document.getElementById('collageCanvas');
+  if (p.x < 0 || p.y < 0 || p.x >= canvas.width || p.y >= canvas.height) return -1;
+  const cellW = canvas.width / coCols;
+  const cellH = canvas.height / coRows;
+  const c = Math.min(coCols - 1, Math.max(0, Math.floor(p.x / cellW)));
+  const r = Math.min(coRows - 1, Math.max(0, Math.floor(p.y / cellH)));
+  return r * coCols + c;
+}
+
+function coHitCorner(idx, p) {
+  const cell = coCells[idx];
+  if (!cell || !cell.img) return null;
+  const hs = CO_HANDLE_SIZE * 1.2;
+  const corners = [
+    { x: cell.ix, y: cell.iy, name: 'tl' },
+    { x: cell.ix + cell.iw, y: cell.iy, name: 'tr' },
+    { x: cell.ix, y: cell.iy + cell.ih, name: 'bl' },
+    { x: cell.ix + cell.iw, y: cell.iy + cell.ih, name: 'br' }
+  ];
+  for (const c of corners) {
+    if (Math.abs(p.x - c.x) <= hs && Math.abs(p.y - c.y) <= hs) return c.name;
+  }
+  return null;
+}
+
+function coOpenFilePicker(idx) {
+  const input = document.getElementById('coFileInput');
+  input.value = '';
+  input.onchange = function() {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    coLoadFileToCell(file, idx);
+  };
+  coActiveIdx = idx;
+  input.click();
+}
+
+function coLoadFileToCell(file, idx) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = function() {
+    coPlaceImage(idx, img);
+    URL.revokeObjectURL(url);
+  };
+  img.onerror = function() {
+    URL.revokeObjectURL(url);
+    alert('Failed to load image');
+  };
+  img.src = url;
+}
+
+function openCollageEditor() {
+  const editor = document.getElementById('collageEditor');
+  if (!editor) return;
+  coCells = [];
+  coActiveIdx = -1;
+  coDragging = null;
+  coResizing = null;
+  coResizeCanvas();
+  coInitCells();
+  editor.style.display = 'flex';
+  coRender();
+}
+
+function closeCollageEditor() {
+  const editor = document.getElementById('collageEditor');
+  if (editor) editor.style.display = 'none';
+  coCells = [];
+  coActiveIdx = -1;
+}
+
+function coClearActiveCell() {
+  if (coActiveIdx < 0) return;
+  coCells[coActiveIdx] = null;
+  coRender();
+}
+
+function coClearAllCells() {
+  if (!confirm('Clear all cells?')) return;
+  coCells = new Array(coCols * coRows).fill(null);
+  coActiveIdx = -1;
+  coRender();
+}
+
+function coConfirm() {
+  const canvas = document.getElementById('collageCanvas');
+  if (!canvas) return;
+  const hasAny = coCells.some(c => c && c.img);
+  if (!hasAny) { alert('Place at least one image'); return; }
+
+  coRender(true);
+  const dataUrl = canvas.toDataURL('image/png');
+
+  closeCollageEditor();
+  openDrawingEditor(dataUrl);
+}
+
+function coInitToolbar() {
+  document.querySelectorAll('#collageEditor .co-tool-btn[data-cols]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cols = parseInt(btn.dataset.cols, 10);
+      const rows = parseInt(btn.dataset.rows, 10);
+      if (cols === coCols && rows === coRows) return;
+      document.querySelectorAll('#collageEditor .co-tool-btn[data-cols]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      coCols = cols; coRows = rows;
+      coResizeCanvas();
+      coInitCells();
+      coRender();
+    });
+  });
+  document.querySelectorAll('#collageEditor .co-tool-btn[data-bg]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      coBgColor = btn.dataset.bg;
+      document.querySelectorAll('#collageEditor .co-tool-btn[data-bg]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      coRender();
+    });
+  });
+}
+
+function coInitEvents() {
+  const canvas = document.getElementById('collageCanvas');
+  if (!canvas) return;
+
+  canvas.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const p = coGetCoords(e);
+    const idx = coHitCell(p);
+    if (idx < 0) return;
+    e.preventDefault();
+
+    if (idx === coActiveIdx) {
+      const corner = coHitCorner(idx, p);
+      if (corner) {
+        const cell = coCells[idx];
+        coResizing = {
+          startX: p.x, startY: p.y,
+          origX: cell.ix, origY: cell.iy,
+          origW: cell.iw, origH: cell.ih,
+          aspect: cell.aspect,
+          corner: corner
+        };
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+        return;
+      }
+      const cell = coCells[idx];
+      if (cell && cell.img &&
+          p.x >= cell.ix && p.x <= cell.ix + cell.iw &&
+          p.y >= cell.iy && p.y <= cell.iy + cell.ih) {
+        coDragging = { startX: p.x, startY: p.y, origX: cell.ix, origY: cell.iy };
+        try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+        return;
+      }
+    }
+
+    coActiveIdx = idx;
+    coRender();
+    if (!coCells[idx] || !coCells[idx].img) {
+      coOpenFilePicker(idx);
+    }
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    const p = coGetCoords(e);
+    if (coDragging) {
+      e.preventDefault();
+      const cell = coCells[coActiveIdx];
+      if (!cell) return;
+      cell.ix = coDragging.origX + (p.x - coDragging.startX);
+      cell.iy = coDragging.origY + (p.y - coDragging.startY);
+      coRender();
+      return;
+    }
+    if (coResizing) {
+      e.preventDefault();
+      const cell = coCells[coActiveIdx];
+      if (!cell) return;
+      const dx = p.x - coResizing.startX;
+      const dy = p.y - coResizing.startY;
+      const keepRatio = document.getElementById('coKeepRatio').checked;
+      const aspect = coResizing.aspect;
+      let nx = coResizing.origX, ny = coResizing.origY;
+      let nw = coResizing.origW, nh = coResizing.origH;
+      const cn = coResizing.corner;
+      if (cn === 'br') {
+        nw = Math.max(CO_MIN_IMG, coResizing.origW + dx);
+        nh = keepRatio ? nw / aspect : Math.max(CO_MIN_IMG, coResizing.origH + dy);
+      } else if (cn === 'bl') {
+        nw = Math.max(CO_MIN_IMG, coResizing.origW - dx);
+        nh = keepRatio ? nw / aspect : Math.max(CO_MIN_IMG, coResizing.origH + dy);
+        nx = coResizing.origX + coResizing.origW - nw;
+      } else if (cn === 'tr') {
+        nw = Math.max(CO_MIN_IMG, coResizing.origW + dx);
+        nh = keepRatio ? nw / aspect : Math.max(CO_MIN_IMG, coResizing.origH - dy);
+        ny = coResizing.origY + coResizing.origH - nh;
+      } else if (cn === 'tl') {
+        nw = Math.max(CO_MIN_IMG, coResizing.origW - dx);
+        nh = keepRatio ? nw / aspect : Math.max(CO_MIN_IMG, coResizing.origH - dy);
+        nx = coResizing.origX + coResizing.origW - nw;
+        ny = coResizing.origY + coResizing.origH - nh;
+      }
+      cell.ix = nx; cell.iy = ny; cell.iw = nw; cell.ih = nh;
+      coRender();
+      return;
+    }
+
+    if (coActiveIdx >= 0) {
+      const corner = coHitCorner(coActiveIdx, p);
+      if (corner) {
+        canvas.style.cursor = (corner === 'tl' || corner === 'br') ? 'nwse-resize' : 'nesw-resize';
+      } else {
+        const cell = coCells[coActiveIdx];
+        if (cell && cell.img &&
+            p.x >= cell.ix && p.x <= cell.ix + cell.iw &&
+            p.y >= cell.iy && p.y <= cell.iy + cell.ih) {
+          canvas.style.cursor = 'move';
+        } else {
+          canvas.style.cursor = 'default';
+        }
+      }
+    } else {
+      canvas.style.cursor = 'default';
+    }
+  });
+
+  function endPointer(e) {
+    if (coDragging || coResizing) {
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+    coDragging = null;
+    coResizing = null;
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+
+  canvas.addEventListener('dragover', e => {
+    e.preventDefault();
+    canvas.classList.add('dragover');
+  });
+  canvas.addEventListener('dragleave', () => canvas.classList.remove('dragover'));
+  canvas.addEventListener('drop', e => {
+    e.preventDefault();
+    canvas.classList.remove('dragover');
+    const p = coGetCoords(e);
+    const idx = coHitCell(p);
+    if (idx < 0) return;
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    coLoadFileToCell(file, idx);
+  });
+}
+
+document.addEventListener('keydown', e => {
+  const editor = document.getElementById('collageEditor');
+  if (!editor || editor.style.display !== 'flex') return;
+  if (e.key === 'Escape') { closeCollageEditor(); return; }
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
+  if (e.key === 'Delete') {
+    if (coActiveIdx >= 0) { coClearActiveCell(); }
+  }
+});
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
@@ -2122,6 +2630,8 @@ function updateGallery() {
 }
 
 initDrawingEditor();
+coInitToolbar();
+coInitEvents();
 updateDrawings();
 
 let galleryUpdateTimer = null;
