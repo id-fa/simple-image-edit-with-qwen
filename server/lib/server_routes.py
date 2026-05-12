@@ -68,6 +68,7 @@ def register_routes(
     get_total_steps: callable,
     prompt_default: str,
     html_template: str,
+    download_tag: str = "qwen-edit",
 ):
     """Register all shared routes on server_common.app."""
     app = common.app
@@ -82,6 +83,7 @@ def register_routes(
             pre_resize_options=pre_resize_options,
             has_preview=has_preview,
             has_enhance=has_enhance,
+            download_tag=download_tag,
         )
 
     @app.route("/api/login", methods=["POST"])
@@ -303,9 +305,9 @@ def register_routes(
         if not rp or not os.path.exists(rp):
             return jsonify({"error": "結果ファイルが見つかりません / Result file not found"}), 404
         date_str = time.strftime("%Y%m%d", time.localtime(job_created or time.time()))
-        dl_name = f"result_qwen-edit_{date_str}_{job_id}.png"
+        dl_name = f"result_{download_tag}_{date_str}_{job_id}.png"
         if input_names and job_user_hash == common.get_user_hash():
-            dl_name = f"{input_names[0]}_qwen-edit_{date_str}_{job_id}.png"
+            dl_name = f"{input_names[0]}_{download_tag}_{date_str}_{job_id}.png"
         return send_file(rp, mimetype="image/png", as_attachment=True,
                          download_name=dl_name)
 

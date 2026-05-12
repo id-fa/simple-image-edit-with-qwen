@@ -1109,7 +1109,7 @@ form.addEventListener('submit', async (e) => {
           resultArea.innerHTML = `
             <img src="${rUrl}" alt="result" style="cursor:pointer;" title="Click to open in drawing editor" onclick="openDrawingEditor('${rUrl}')">
             <div style="margin-top:6px;display:flex;gap:12px;align-items:center;font-size:0.8rem;">
-              <a href="${rUrl}" download="result_qwen-edit_${ymdToday()}_${jobId}.png">Download</a>
+              <a href="${rUrl}" download="result_{{ download_tag }}_${ymdToday()}_${jobId}.png">Download</a>
               <label><input type="radio" name="gallery_slot1" value="${resultRef}" onclick="handleResultSlot(1,'${resultRef}',this)"> Img1</label>
               <label><input type="radio" name="gallery_slot2" value="${resultRef}" onclick="handleResultSlot(2,'${resultRef}',this)"> Img2</label>
             </div>
@@ -2540,7 +2540,7 @@ function renderGalleryItem(item) {
   const resultUrl = '/api/result/' + item.job_id + pwParam;
   const resultRef = item.job_id + ':result';
   const ymd = ymdFromEpoch(item.created);
-  const resultDlName = (isOwner && inputNames[0]) ? inputNames[0] + '_qwen-edit_' + ymd + '_' + item.job_id + '.png' : 'result_qwen-edit_' + ymd + '_' + item.job_id + '.png';
+  const resultDlName = (isOwner && inputNames[0]) ? inputNames[0] + '_{{ download_tag }}_' + ymd + '_' + item.job_id + '.png' : 'result_{{ download_tag }}_' + ymd + '_' + item.job_id + '.png';
   const resultThumb = '<div class="gallery-img-box">'
     + '<div class="gallery-img-label">Result</div>'
     + '<img src="' + resultUrl + '" class="gallery-thumb" onclick="openLightbox(\'' + resultUrl + '\')" loading="lazy">'

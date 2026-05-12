@@ -424,6 +424,7 @@ def main():
         get_total_steps=lambda: 1,
         prompt_default=PROMPT_DEFAULT,
         html_template=HTML_TEMPLATE,
+        download_tag="gpt2-edit",
     )
 
     # Model info for UI

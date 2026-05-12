@@ -673,6 +673,7 @@ register_routes(
     get_total_steps=lambda: configured_steps,
     prompt_default=PROMPT_DEFAULT,
     html_template=HTML_TEMPLATE,
+    download_tag="klein-edit",
 )
 
 
